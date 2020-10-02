@@ -10,7 +10,8 @@ __all__ = ['MobileNetV3', 'mobilenetv3_small_w7d20', 'mobilenetv3_small_wd2', 'm
 import os
 from mxnet import cpu
 from mxnet.gluon import nn, HybridBlock
-from .common import conv1x1, conv1x1_block, conv3x3_block, dwconv3x3_block, dwconv5x5_block, SEBlock, HSwish
+from .common import round_channels, conv1x1, conv1x1_block, conv3x3_block, dwconv3x3_block, dwconv5x5_block, SEBlock,\
+    HSwish
 
 
 class MobileNetV3Unit(HybridBlock):
@@ -33,6 +34,9 @@ class MobileNetV3Unit(HybridBlock):
         Activation function or name of activation function.
     use_se : bool
         Whether to use SE-module.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+        Useful for fine-tuning.
     """
     def __init__(self,
                  in_channels,
@@ -42,47 +46,57 @@ class MobileNetV3Unit(HybridBlock):
                  use_kernel3,
                  activation,
                  use_se,
+                 bn_use_global_stats=False,
                  **kwargs):
         super(MobileNetV3Unit, self).__init__(**kwargs)
+        assert (exp_channels >= out_channels)
         self.residual = (in_channels == out_channels) and (strides == 1)
         self.use_se = use_se
+        self.use_exp_conv = exp_channels != out_channels
         mid_channels = exp_channels
 
         with self.name_scope():
-            self.conv1 = conv1x1_block(
-                in_channels=in_channels,
-                out_channels=mid_channels,
-                activation=activation)
+            if self.use_exp_conv:
+                self.exp_conv = conv1x1_block(
+                    in_channels=in_channels,
+                    out_channels=mid_channels,
+                    bn_use_global_stats=bn_use_global_stats,
+                    activation=activation)
             if use_kernel3:
-                self.conv2 = dwconv3x3_block(
+                self.conv1 = dwconv3x3_block(
                     in_channels=mid_channels,
                     out_channels=mid_channels,
                     strides=strides,
+                    bn_use_global_stats=bn_use_global_stats,
                     activation=activation)
             else:
-                self.conv2 = dwconv5x5_block(
+                self.conv1 = dwconv5x5_block(
                     in_channels=mid_channels,
                     out_channels=mid_channels,
                     strides=strides,
+                    bn_use_global_stats=bn_use_global_stats,
                     activation=activation)
             if self.use_se:
                 self.se = SEBlock(
                     channels=mid_channels,
                     reduction=4,
-                    approx_sigmoid=True)
-            self.conv3 = conv1x1_block(
+                    round_mid=True,
+                    out_activation="hsigmoid")
+            self.conv2 = conv1x1_block(
                 in_channels=mid_channels,
                 out_channels=out_channels,
+                bn_use_global_stats=bn_use_global_stats,
                 activation=None)
 
     def hybrid_forward(self, F, x):
         if self.residual:
             identity = x
+        if self.use_exp_conv:
+            x = self.exp_conv(x)
         x = self.conv1(x)
-        x = self.conv2(x)
         if self.use_se:
             x = self.se(x)
-        x = self.conv3(x)
+        x = self.conv2(x)
         if self.residual:
             x = x + identity
         return x
@@ -100,11 +114,15 @@ class MobileNetV3FinalBlock(HybridBlock):
         Number of output channels.
     use_se : bool
         Whether to use SE-module.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+        Useful for fine-tuning.
     """
     def __init__(self,
                  in_channels,
                  out_channels,
                  use_se,
+                 bn_use_global_stats=False,
                  **kwargs):
         super(MobileNetV3FinalBlock, self).__init__(**kwargs)
         self.use_se = use_se
@@ -113,12 +131,14 @@ class MobileNetV3FinalBlock(HybridBlock):
             self.conv = conv1x1_block(
                 in_channels=in_channels,
                 out_channels=out_channels,
+                bn_use_global_stats=bn_use_global_stats,
                 activation="hswish")
             if self.use_se:
                 self.se = SEBlock(
                     channels=out_channels,
                     reduction=4,
-                    approx_sigmoid=True)
+                    round_mid=True,
+                    out_activation="hsigmoid")
 
     def hybrid_forward(self, F, x):
         x = self.conv(x)
@@ -139,26 +159,35 @@ class MobileNetV3Classifier(HybridBlock):
         Number of output channels.
     mid_channels : int
         Number of middle channels.
+    dropout_rate : float
+        Parameter of Dropout layer. Faction of the input units to drop.
     """
     def __init__(self,
                  in_channels,
                  out_channels,
                  mid_channels,
+                 dropout_rate,
                  **kwargs):
         super(MobileNetV3Classifier, self).__init__(**kwargs)
+        self.use_dropout = (dropout_rate != 0.0)
 
         with self.name_scope():
             self.conv1 = conv1x1(
                 in_channels=in_channels,
                 out_channels=mid_channels)
             self.activ = HSwish()
+            if self.use_dropout:
+                self.dropout = nn.Dropout(rate=dropout_rate)
             self.conv2 = conv1x1(
                 in_channels=mid_channels,
-                out_channels=out_channels)
+                out_channels=out_channels,
+                use_bias=True)
 
     def hybrid_forward(self, F, x):
         x = self.conv1(x)
         x = self.activ(x)
+        if self.use_dropout:
+            x = self.dropout(x)
         x = self.conv2(x)
         return x
 
@@ -189,6 +218,9 @@ class MobileNetV3(HybridBlock):
         Whether to use stride for the first stage.
     final_use_se : bool
         Whether to use SE-module in the final block.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+        Useful for fine-tuning.
     in_channels : int, default 3
         Number of input channels.
     in_size : tuple of two ints, default (224, 224)
@@ -207,6 +239,7 @@ class MobileNetV3(HybridBlock):
                  use_se,
                  first_stride,
                  final_use_se,
+                 bn_use_global_stats=False,
                  in_channels=3,
                  in_size=(224, 224),
                  classes=1000,
@@ -221,6 +254,7 @@ class MobileNetV3(HybridBlock):
                 in_channels=in_channels,
                 out_channels=init_block_channels,
                 strides=2,
+                bn_use_global_stats=bn_use_global_stats,
                 activation="hswish"))
             in_channels = init_block_channels
             for i, channels_per_stage in enumerate(channels):
@@ -239,13 +273,15 @@ class MobileNetV3(HybridBlock):
                             use_kernel3=use_kernel3,
                             strides=strides,
                             activation=activation,
-                            use_se=use_se_flag))
+                            use_se=use_se_flag,
+                            bn_use_global_stats=bn_use_global_stats))
                         in_channels = out_channels
                 self.features.add(stage)
             self.features.add(MobileNetV3FinalBlock(
                 in_channels=in_channels,
                 out_channels=final_block_channels,
-                use_se=final_use_se))
+                use_se=final_use_se,
+                bn_use_global_stats=bn_use_global_stats))
             in_channels = final_block_channels
             self.features.add(nn.AvgPool2D(
                 pool_size=7,
@@ -255,7 +291,8 @@ class MobileNetV3(HybridBlock):
             self.output.add(MobileNetV3Classifier(
                 in_channels=in_channels,
                 out_channels=classes,
-                mid_channels=classifier_mid_channels))
+                mid_channels=classifier_mid_channels,
+                dropout_rate=0.2))
             self.output.add(nn.Flatten())
 
     def hybrid_forward(self, F, x):
@@ -298,7 +335,6 @@ def get_mobilenetv3(version,
         use_relu = [[1], [1, 1], [0, 0, 0, 0, 0], [0, 0, 0]]
         use_se = [[1], [0, 0], [1, 1, 1, 1, 1], [1, 1, 1]]
         first_stride = True
-        final_use_se = True
         final_block_channels = 576
     elif version == "large":
         init_block_channels = 16
@@ -308,18 +344,19 @@ def get_mobilenetv3(version,
         use_relu = [[1], [1, 1], [1, 1, 1], [0, 0, 0, 0, 0, 0], [0, 0, 0]]
         use_se = [[0], [0, 0], [1, 1, 1], [0, 0, 0, 0, 1, 1], [1, 1, 1]]
         first_stride = False
-        final_use_se = False
         final_block_channels = 960
     else:
         raise ValueError("Unsupported MobileNetV3 version {}".format(version))
 
+    final_use_se = False
     classifier_mid_channels = 1280
 
     if width_scale != 1.0:
-        channels = [[int(cij * width_scale) for cij in ci] for ci in channels]
-        init_block_channels = int(init_block_channels * width_scale)
+        channels = [[round_channels(cij * width_scale) for cij in ci] for ci in channels]
+        exp_channels = [[round_channels(cij * width_scale) for cij in ci] for ci in exp_channels]
+        init_block_channels = round_channels(init_block_channels * width_scale)
         if width_scale > 1.0:
-            final_block_channels = int(final_block_channels * width_scale)
+            final_block_channels = round_channels(final_block_channels * width_scale)
 
     net = MobileNetV3(
         channels=channels,
@@ -541,16 +578,16 @@ def _test():
                 continue
             weight_count += np.prod(param.shape)
         print("m={}, {}".format(model.__name__, weight_count))
-        assert (model != mobilenetv3_small_w7d20 or weight_count == 2845419)
-        assert (model != mobilenetv3_small_wd2 or weight_count == 2907518)
-        assert (model != mobilenetv3_small_w3d4 or weight_count == 3006542)
-        assert (model != mobilenetv3_small_w1 or weight_count == 3105566)
-        assert (model != mobilenetv3_small_w5d4 or weight_count == 3499970)
-        assert (model != mobilenetv3_large_w7d20 or weight_count == 4603377)
-        assert (model != mobilenetv3_large_wd2 or weight_count == 4806022)
-        assert (model != mobilenetv3_large_w3d4 or weight_count == 5142614)
-        assert (model != mobilenetv3_large_w1 or weight_count == 5479206)
-        assert (model != mobilenetv3_large_w5d4 or weight_count == 6171478)
+        assert (model != mobilenetv3_small_w7d20 or weight_count == 2159600)
+        assert (model != mobilenetv3_small_wd2 or weight_count == 2288976)
+        assert (model != mobilenetv3_small_w3d4 or weight_count == 2581312)
+        assert (model != mobilenetv3_small_w1 or weight_count == 2945288)
+        assert (model != mobilenetv3_small_w5d4 or weight_count == 3643632)
+        assert (model != mobilenetv3_large_w7d20 or weight_count == 2943080)
+        assert (model != mobilenetv3_large_wd2 or weight_count == 3334896)
+        assert (model != mobilenetv3_large_w3d4 or weight_count == 4263496)
+        assert (model != mobilenetv3_large_w1 or weight_count == 5481752)
+        assert (model != mobilenetv3_large_w5d4 or weight_count == 7459144)
 
         x = mx.nd.zeros((1, 3, 224, 224), ctx=ctx)
         y = net(x)

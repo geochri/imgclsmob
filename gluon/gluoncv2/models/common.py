@@ -2,16 +2,43 @@
     Common routines for models in Gluon.
 """
 
-__all__ = ['ReLU6', 'PReLU2', 'HSwish', 'conv1x1', 'conv3x3', 'depthwise_conv3x3', 'ConvBlock', 'conv1x1_block',
-           'conv3x3_block', 'conv7x7_block', 'dwconv3x3_block', 'dwconv5x5_block', 'PreConvBlock', 'pre_conv1x1_block',
-           'pre_conv3x3_block', 'ChannelShuffle', 'ChannelShuffle2', 'SEBlock', 'IBN', 'DualPathSequential',
-           'ParametricSequential', 'Concurrent', 'ParametricConcurrent', 'Hourglass', 'SesquialteralHourglass',
-           'MultiOutputSequential']
+__all__ = ['round_channels', 'get_activation_layer', 'ReLU6', 'PReLU2', 'HSigmoid', 'HSwish', 'Softmax',
+           'SelectableDense', 'DenseBlock', 'ConvBlock1d', 'conv1x1', 'conv3x3', 'depthwise_conv3x3', 'BatchNormExtra',
+           'ConvBlock', 'conv1x1_block', 'conv3x3_block', 'conv7x7_block', 'dwconv_block', 'dwconv3x3_block',
+           'dwconv5x5_block', 'dwsconv3x3_block', 'PreConvBlock', 'pre_conv1x1_block', 'pre_conv3x3_block',
+           'DeconvBlock', 'InterpolationBlock', 'ChannelShuffle', 'ChannelShuffle2', 'SEBlock', 'DucBlock', 'split',
+           'IBN', 'DualPathSequential', 'ParametricSequential', 'Concurrent', 'SequentialConcurrent',
+           'ParametricConcurrent', 'Hourglass', 'SesquialteralHourglass', 'MultiOutputSequential', 'ParallelConcurent',
+           'HeatmapMaxDetBlock']
 
 import math
 from inspect import isfunction
 import mxnet as mx
 from mxnet.gluon import nn, HybridBlock
+from mxnet.gluon.contrib.nn import PixelShuffle2D
+
+
+def round_channels(channels,
+                   divisor=8):
+    """
+    Round weighted channel number (make divisible operation).
+
+    Parameters:
+    ----------
+    channels : int or float
+        Original number of channels.
+    divisor : int, default 8
+        Alignment value.
+
+    Returns
+    -------
+    int
+        Weighted number of channels.
+    """
+    rounded_channels = max(int(channels + divisor / 2.0) // divisor * divisor, divisor)
+    if float(rounded_channels) < 0.9 * channels:
+        rounded_channels += divisor
+    return rounded_channels
 
 
 class ReLU6(HybridBlock):
@@ -23,6 +50,9 @@ class ReLU6(HybridBlock):
 
     def hybrid_forward(self, F, x):
         return F.clip(x, 0.0, 6.0, name="relu6")
+
+    def __repr__(self):
+        return '{name}()'.format(name=self.__class__.__name__)
 
 
 class PReLU2(HybridBlock):
@@ -47,6 +77,12 @@ class PReLU2(HybridBlock):
     def hybrid_forward(self, F, x, alpha):
         return F.LeakyReLU(x, gamma=alpha, act_type="prelu", name="fwd")
 
+    def __repr__(self):
+        s = '{name}(in_channels={in_channels})'
+        return s.format(
+            name=self.__class__.__name__,
+            in_channels=self.alpha.shape[0])
+
 
 class HSigmoid(HybridBlock):
     """
@@ -59,6 +95,9 @@ class HSigmoid(HybridBlock):
     def hybrid_forward(self, F, x):
         return F.clip(x + 3.0, 0.0, 6.0, name="relu6") / 6.0
 
+    def __repr__(self):
+        return '{name}()'.format(name=self.__class__.__name__)
+
 
 class HSwish(HybridBlock):
     """
@@ -69,6 +108,29 @@ class HSwish(HybridBlock):
 
     def hybrid_forward(self, F, x):
         return x * F.clip(x + 3.0, 0.0, 6.0, name="relu6") / 6.0
+
+    def __repr__(self):
+        return '{name}()'.format(name=self.__class__.__name__)
+
+
+class Softmax(HybridBlock):
+    """
+    Softmax activation function.
+
+    Parameters:
+    ----------
+    axis : int, default 1
+        Axis along which to do softmax.
+    """
+    def __init__(self, axis=1, **kwargs):
+        super(Softmax, self).__init__(**kwargs)
+        self.axis = axis
+
+    def hybrid_forward(self, F, x):
+        return x.softmax(axis=self.axis)
+
+    def __repr__(self):
+        return '{name}()'.format(name=self.__class__.__name__)
 
 
 def get_activation_layer(activation):
@@ -95,11 +157,224 @@ def get_activation_layer(activation):
             return nn.Swish()
         elif activation == "hswish":
             return HSwish()
+        elif activation == "hsigmoid":
+            return HSigmoid()
         else:
             return nn.Activation(activation)
     else:
         assert (isinstance(activation, HybridBlock))
         return activation
+
+
+class SelectableDense(HybridBlock):
+    """
+    Selectable dense layer.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input features.
+    out_channels : int
+        Number of output features.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    dtype : str or np.dtype, default 'float32'
+        Data type of output embeddings.
+    weight_initializer : str or `Initializer`
+        Initializer for the `kernel` weights matrix.
+    bias_initializer: str or `Initializer`
+        Initializer for the bias vector.
+    num_options : int, default 1
+        Number of selectable options.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 use_bias=False,
+                 dtype="float32",
+                 weight_initializer=None,
+                 bias_initializer="zeros",
+                 num_options=1,
+                 **kwargs):
+        super(SelectableDense, self).__init__(**kwargs)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.use_bias = use_bias
+        self.num_options = num_options
+
+        with self.name_scope():
+            self.weight = self.params.get(
+                "weight",
+                shape=(num_options, out_channels, in_channels),
+                init=weight_initializer,
+                dtype=dtype,
+                allow_deferred_init=True)
+            if use_bias:
+                self.bias = self.params.get(
+                    "bias",
+                    shape=(num_options, out_channels),
+                    init=bias_initializer,
+                    dtype=dtype,
+                    allow_deferred_init=True)
+            else:
+                self.bias = None
+
+    def hybrid_forward(self, F, x, indices, weight, bias=None):
+        weight = F.take(weight, indices=indices, axis=0)
+        x = x.expand_dims(axis=-1)
+        x = F.batch_dot(weight, x)
+        x = x.squeeze(axis=-1)
+        if self.use_bias:
+            bias = F.take(bias, indices=indices, axis=0)
+            x += bias
+        return x
+
+    def __repr__(self):
+        s = "{name}({layout}, {num_options})"
+        shape = self.weight.shape
+        return s.format(name=self.__class__.__name__,
+                        layout="{0} -> {1}".format(shape[1] if shape[1] else None, shape[0]),
+                        num_options=self.num_options)
+
+
+class DenseBlock(HybridBlock):
+    """
+    Standard dense block with Batch normalization and activation.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input features.
+    out_channels : int
+        Number of output features.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
+    bn_epsilon : float, default 1e-5
+        Small float added to variance in Batch norm.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
+    activation : function or str or None, default nn.Activation('relu')
+        Activation function or name of activation function.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 use_bias=False,
+                 use_bn=True,
+                 bn_epsilon=1e-5,
+                 bn_use_global_stats=False,
+                 bn_cudnn_off=False,
+                 activation=(lambda: nn.Activation("relu")),
+                 **kwargs):
+        super(DenseBlock, self).__init__(**kwargs)
+        self.activate = (activation is not None)
+        self.use_bn = use_bn
+
+        with self.name_scope():
+            self.fc = nn.Dense(
+                units=out_channels,
+                use_bias=use_bias,
+                in_units=in_channels)
+            if self.use_bn:
+                self.bn = BatchNormExtra(
+                    in_channels=out_channels,
+                    epsilon=bn_epsilon,
+                    use_global_stats=bn_use_global_stats,
+                    cudnn_off=bn_cudnn_off)
+            if self.activate:
+                self.activ = get_activation_layer(activation)
+
+    def hybrid_forward(self, F, x):
+        x = self.fc(x)
+        if self.use_bn:
+            x = self.bn(x)
+        if self.activate:
+            x = self.activ(x)
+        return x
+
+
+class ConvBlock1d(HybridBlock):
+    """
+    Standard 1D convolution block with Batch normalization and activation.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    kernel_size : int
+        Convolution window size.
+    strides : int
+        Strides of the convolution.
+    padding : int
+        Padding value for convolution layer.
+    dilation : int
+        Dilation value for convolution layer.
+    groups : int, default 1
+        Number of groups.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
+    bn_epsilon : float, default 1e-5
+        Small float added to variance in Batch norm.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
+    activation : function or str or None, default nn.Activation('relu')
+        Activation function or name of activation function.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 strides,
+                 padding,
+                 dilation=1,
+                 groups=1,
+                 use_bias=False,
+                 use_bn=True,
+                 bn_epsilon=1e-5,
+                 bn_use_global_stats=False,
+                 bn_cudnn_off=False,
+                 activation=(lambda: nn.Activation("relu")),
+                 **kwargs):
+        super(ConvBlock1d, self).__init__(**kwargs)
+        self.activate = (activation is not None)
+        self.use_bn = use_bn
+
+        with self.name_scope():
+            self.conv = nn.Conv1D(
+                channels=out_channels,
+                kernel_size=kernel_size,
+                strides=strides,
+                padding=padding,
+                dilation=dilation,
+                groups=groups,
+                use_bias=use_bias,
+                in_channels=in_channels)
+            if self.use_bn:
+                self.bn = BatchNormExtra(
+                    in_channels=out_channels,
+                    epsilon=bn_epsilon,
+                    use_global_stats=bn_use_global_stats,
+                    cudnn_off=bn_cudnn_off)
+            if self.activate:
+                self.activ = get_activation_layer(activation)
+
+    def hybrid_forward(self, F, x):
+        x = self.conv(x)
+        if self.use_bn:
+            x = self.bn(x)
+        if self.activate:
+            x = self.activ(x)
+        return x
 
 
 def conv1x1(in_channels,
@@ -192,9 +467,23 @@ def depthwise_conv3x3(channels,
         in_channels=channels)
 
 
+class BatchNormExtra(nn.BatchNorm):
+    """
+    Batch normalization layer with extra parameters.
+    """
+    def __init__(self, **kwargs):
+        has_cudnn_off = ("cudnn_off" in kwargs)
+        if has_cudnn_off:
+            cudnn_off = kwargs["cudnn_off"]
+            del kwargs["cudnn_off"]
+        super(BatchNormExtra, self).__init__(**kwargs)
+        if has_cudnn_off:
+            self._kwargs["cudnn_off"] = cudnn_off
+
+
 class ConvBlock(HybridBlock):
     """
-    Standard convolution block with Batch normalization and activation.
+    Standard convolution block with batch normalization and activation.
 
     Parameters:
     ----------
@@ -214,10 +503,14 @@ class ConvBlock(HybridBlock):
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_epsilon : float, default 1e-5
         Small float added to variance in Batch norm.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
     activation : function or str or None, default nn.Activation('relu')
         Activation function or name of activation function.
     """
@@ -230,12 +523,15 @@ class ConvBlock(HybridBlock):
                  dilation=1,
                  groups=1,
                  use_bias=False,
+                 use_bn=True,
                  bn_epsilon=1e-5,
                  bn_use_global_stats=False,
+                 bn_cudnn_off=False,
                  activation=(lambda: nn.Activation("relu")),
                  **kwargs):
         super(ConvBlock, self).__init__(**kwargs)
         self.activate = (activation is not None)
+        self.use_bn = use_bn
 
         with self.name_scope():
             self.conv = nn.Conv2D(
@@ -247,16 +543,19 @@ class ConvBlock(HybridBlock):
                 groups=groups,
                 use_bias=use_bias,
                 in_channels=in_channels)
-            self.bn = nn.BatchNorm(
-                in_channels=out_channels,
-                epsilon=bn_epsilon,
-                use_global_stats=bn_use_global_stats)
+            if self.use_bn:
+                self.bn = BatchNormExtra(
+                    in_channels=out_channels,
+                    epsilon=bn_epsilon,
+                    use_global_stats=bn_use_global_stats,
+                    cudnn_off=bn_cudnn_off)
             if self.activate:
                 self.activ = get_activation_layer(activation)
 
     def hybrid_forward(self, F, x):
         x = self.conv(x)
-        x = self.bn(x)
+        if self.use_bn:
+            x = self.bn(x)
         if self.activate:
             x = self.activ(x)
         return x
@@ -267,8 +566,10 @@ def conv1x1_block(in_channels,
                   strides=1,
                   groups=1,
                   use_bias=False,
+                  use_bn=True,
                   bn_epsilon=1e-5,
                   bn_use_global_stats=False,
+                  bn_cudnn_off=False,
                   activation=(lambda: nn.Activation("relu")),
                   **kwargs):
     """
@@ -286,10 +587,14 @@ def conv1x1_block(in_channels,
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_epsilon : float, default 1e-5
         Small float added to variance in Batch norm.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
     activation : function or str or None, default nn.Activation('relu')
         Activation function or name of activation function.
     """
@@ -301,8 +606,10 @@ def conv1x1_block(in_channels,
         padding=0,
         groups=groups,
         use_bias=use_bias,
+        use_bn=use_bn,
         bn_epsilon=bn_epsilon,
         bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
         activation=activation,
         **kwargs)
 
@@ -314,8 +621,10 @@ def conv3x3_block(in_channels,
                   dilation=1,
                   groups=1,
                   use_bias=False,
+                  use_bn=True,
                   bn_epsilon=1e-5,
                   bn_use_global_stats=False,
+                  bn_cudnn_off=False,
                   activation=(lambda: nn.Activation("relu")),
                   **kwargs):
     """
@@ -337,10 +646,14 @@ def conv3x3_block(in_channels,
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_epsilon : float, default 1e-5
         Small float added to variance in Batch norm.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
     activation : function or str or None, default nn.Activation('relu')
         Activation function or name of activation function.
     """
@@ -353,8 +666,10 @@ def conv3x3_block(in_channels,
         dilation=dilation,
         groups=groups,
         use_bias=use_bias,
+        use_bn=use_bn,
         bn_epsilon=bn_epsilon,
         bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
         activation=activation,
         **kwargs)
 
@@ -368,6 +683,7 @@ def conv5x5_block(in_channels,
                   use_bias=False,
                   bn_epsilon=1e-5,
                   bn_use_global_stats=False,
+                  bn_cudnn_off=False,
                   activation=(lambda: nn.Activation("relu")),
                   **kwargs):
     """
@@ -393,6 +709,8 @@ def conv5x5_block(in_channels,
         Small float added to variance in Batch norm.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
     activation : function or str or None, default nn.Activation('relu')
         Activation function or name of activation function.
     """
@@ -407,6 +725,7 @@ def conv5x5_block(in_channels,
         use_bias=use_bias,
         bn_epsilon=bn_epsilon,
         bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
         activation=activation,
         **kwargs)
 
@@ -416,7 +735,9 @@ def conv7x7_block(in_channels,
                   strides=1,
                   padding=3,
                   use_bias=False,
+                  use_bn=True,
                   bn_use_global_stats=False,
+                  bn_cudnn_off=False,
                   activation=(lambda: nn.Activation("relu")),
                   **kwargs):
     """
@@ -434,8 +755,12 @@ def conv7x7_block(in_channels,
         Padding value for convolution layer.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
     activation : function or str or None, default nn.Activation('relu')
         Activation function or name of activation function.
     """
@@ -446,7 +771,69 @@ def conv7x7_block(in_channels,
         strides=strides,
         padding=padding,
         use_bias=use_bias,
+        use_bn=use_bn,
         bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
+        activation=activation,
+        **kwargs)
+
+
+def dwconv_block(in_channels,
+                 out_channels,
+                 kernel_size,
+                 strides,
+                 padding,
+                 dilation=1,
+                 use_bias=False,
+                 use_bn=True,
+                 bn_epsilon=1e-5,
+                 bn_use_global_stats=False,
+                 bn_cudnn_off=False,
+                 activation=(lambda: nn.Activation("relu")),
+                 **kwargs):
+    """
+    Depthwise version of the standard convolution block.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    kernel_size : int or tuple/list of 2 int
+        Convolution window size.
+    strides : int or tuple/list of 2 int
+        Strides of the convolution.
+    padding : int or tuple/list of 2 int
+        Padding value for convolution layer.
+    dilation : int or tuple/list of 2 int, default 1
+        Dilation value for convolution layer.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
+    bn_epsilon : float, default 1e-5
+        Small float added to variance in Batch norm.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
+    activation : function or str or None, default nn.Activation('relu')
+        Activation function or name of activation function.
+    """
+    return ConvBlock(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        strides=strides,
+        padding=padding,
+        dilation=dilation,
+        groups=out_channels,
+        use_bias=use_bias,
+        use_bn=use_bn,
+        bn_epsilon=bn_epsilon,
+        bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
         activation=activation,
         **kwargs)
 
@@ -459,6 +846,7 @@ def dwconv3x3_block(in_channels,
                     use_bias=False,
                     bn_epsilon=1e-5,
                     bn_use_global_stats=False,
+                    bn_cudnn_off=False,
                     activation=(lambda: nn.Activation("relu")),
                     **kwargs):
     """
@@ -482,19 +870,22 @@ def dwconv3x3_block(in_channels,
         Small float added to variance in Batch norm.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
     activation : function or str or None, default nn.Activation('relu')
         Activation function or name of activation function.
     """
-    return conv3x3_block(
+    return dwconv_block(
         in_channels=in_channels,
         out_channels=out_channels,
+        kernel_size=3,
         strides=strides,
         padding=padding,
         dilation=dilation,
-        groups=out_channels,
         use_bias=use_bias,
         bn_epsilon=bn_epsilon,
         bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
         activation=activation,
         **kwargs)
 
@@ -507,6 +898,7 @@ def dwconv5x5_block(in_channels,
                     use_bias=False,
                     bn_epsilon=1e-5,
                     bn_use_global_stats=False,
+                    bn_cudnn_off=False,
                     activation=(lambda: nn.Activation("relu")),
                     **kwargs):
     """
@@ -530,20 +922,158 @@ def dwconv5x5_block(in_channels,
         Small float added to variance in Batch norm.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
     activation : function or str or None, default nn.Activation('relu')
         Activation function or name of activation function.
     """
-    return conv5x5_block(
+    return dwconv_block(
         in_channels=in_channels,
         out_channels=out_channels,
+        kernel_size=5,
         strides=strides,
         padding=padding,
         dilation=dilation,
-        groups=out_channels,
         use_bias=use_bias,
         bn_epsilon=bn_epsilon,
         bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
         activation=activation,
+        **kwargs)
+
+
+class DwsConvBlock(HybridBlock):
+    """
+    Depthwise separable convolution block with BatchNorms and activations at each convolution layers.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    kernel_size : int or tuple/list of 2 int
+        Convolution window size.
+    strides : int or tuple/list of 2 int
+        Strides of the convolution.
+    padding : int or tuple/list of 2 int
+        Padding value for convolution layer.
+    dilation : int or tuple/list of 2 int, default 1
+        Dilation value for convolution layer.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
+    bn_epsilon : float, default 1e-5
+        Small float added to variance in Batch norm.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
+    dw_activation : function or str or None, default nn.Activation('relu')
+        Activation function after the depthwise convolution block.
+    pw_activation : function or str or None, default nn.Activation('relu')
+        Activation function after the pointwise convolution block.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 strides,
+                 padding,
+                 dilation=1,
+                 use_bias=False,
+                 use_bn=True,
+                 bn_epsilon=1e-5,
+                 bn_use_global_stats=False,
+                 bn_cudnn_off=False,
+                 dw_activation=(lambda: nn.Activation("relu")),
+                 pw_activation=(lambda: nn.Activation("relu")),
+                 **kwargs):
+        super(DwsConvBlock, self).__init__(**kwargs)
+        with self.name_scope():
+            self.dw_conv = dwconv_block(
+                in_channels=in_channels,
+                out_channels=in_channels,
+                kernel_size=kernel_size,
+                strides=strides,
+                padding=padding,
+                dilation=dilation,
+                use_bias=use_bias,
+                use_bn=use_bn,
+                bn_epsilon=bn_epsilon,
+                bn_use_global_stats=bn_use_global_stats,
+                bn_cudnn_off=bn_cudnn_off,
+                activation=dw_activation)
+            self.pw_conv = conv1x1_block(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                use_bias=use_bias,
+                use_bn=use_bn,
+                bn_epsilon=bn_epsilon,
+                bn_use_global_stats=bn_use_global_stats,
+                bn_cudnn_off=bn_cudnn_off,
+                activation=pw_activation)
+
+    def hybrid_forward(self, F, x):
+        x = self.dw_conv(x)
+        x = self.pw_conv(x)
+        return x
+
+
+def dwsconv3x3_block(in_channels,
+                     out_channels,
+                     strides=1,
+                     padding=1,
+                     dilation=1,
+                     use_bias=False,
+                     bn_epsilon=1e-5,
+                     bn_use_global_stats=False,
+                     bn_cudnn_off=False,
+                     dw_activation=(lambda: nn.Activation("relu")),
+                     pw_activation=(lambda: nn.Activation("relu")),
+                     **kwargs):
+    """
+    3x3 depthwise separable version of the standard convolution block.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    strides : int or tuple/list of 2 int, default 1
+        Strides of the convolution.
+    padding : int or tuple/list of 2 int, default 1
+        Padding value for convolution layer.
+    dilation : int or tuple/list of 2 int, default 1
+        Dilation value for convolution layer.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    bn_epsilon : float, default 1e-5
+        Small float added to variance in Batch norm.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
+    dw_activation : function or str or None, default nn.Activation('relu')
+        Activation function after the depthwise convolution block.
+    pw_activation : function or str or None, default nn.Activation('relu')
+        Activation function after the pointwise convolution block.
+    """
+    return DwsConvBlock(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=3,
+        strides=strides,
+        padding=padding,
+        dilation=dilation,
+        use_bias=use_bias,
+        bn_epsilon=bn_epsilon,
+        bn_use_global_stats=bn_use_global_stats,
+        bn_cudnn_off=bn_cudnn_off,
+        dw_activation=dw_activation,
+        pw_activation=pw_activation,
         **kwargs)
 
 
@@ -569,6 +1099,8 @@ class PreConvBlock(HybridBlock):
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
     return_preact : bool, default False
@@ -585,6 +1117,7 @@ class PreConvBlock(HybridBlock):
                  dilation=1,
                  groups=1,
                  use_bias=False,
+                 use_bn=True,
                  bn_use_global_stats=False,
                  return_preact=False,
                  activate=True,
@@ -592,11 +1125,13 @@ class PreConvBlock(HybridBlock):
         super(PreConvBlock, self).__init__(**kwargs)
         self.return_preact = return_preact
         self.activate = activate
+        self.use_bn = use_bn
 
         with self.name_scope():
-            self.bn = nn.BatchNorm(
-                in_channels=in_channels,
-                use_global_stats=bn_use_global_stats)
+            if self.use_bn:
+                self.bn = nn.BatchNorm(
+                    in_channels=in_channels,
+                    use_global_stats=bn_use_global_stats)
             if self.activate:
                 self.activ = nn.Activation("relu")
             self.conv = nn.Conv2D(
@@ -610,7 +1145,8 @@ class PreConvBlock(HybridBlock):
                 in_channels=in_channels)
 
     def hybrid_forward(self, F, x):
-        x = self.bn(x)
+        if self.use_bn:
+            x = self.bn(x)
         if self.activate:
             x = self.activ(x)
         if self.return_preact:
@@ -626,6 +1162,7 @@ def pre_conv1x1_block(in_channels,
                       out_channels,
                       strides=1,
                       use_bias=False,
+                      use_bn=True,
                       bn_use_global_stats=False,
                       return_preact=False,
                       activate=True):
@@ -642,6 +1179,8 @@ def pre_conv1x1_block(in_channels,
         Strides of the convolution.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
     return_preact : bool, default False
@@ -656,6 +1195,7 @@ def pre_conv1x1_block(in_channels,
         strides=strides,
         padding=0,
         use_bias=use_bias,
+        use_bn=use_bn,
         bn_use_global_stats=bn_use_global_stats,
         return_preact=return_preact,
         activate=activate)
@@ -667,6 +1207,8 @@ def pre_conv3x3_block(in_channels,
                       padding=1,
                       dilation=1,
                       groups=1,
+                      use_bias=False,
+                      use_bn=True,
                       bn_use_global_stats=False,
                       return_preact=False,
                       activate=True):
@@ -687,6 +1229,10 @@ def pre_conv3x3_block(in_channels,
         Dilation value for convolution layer.
     groups : int, default 1
         Number of groups.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_use_global_stats : bool, default False
         Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
     return_preact : bool, default False
@@ -702,9 +1248,156 @@ def pre_conv3x3_block(in_channels,
         padding=padding,
         dilation=dilation,
         groups=groups,
+        use_bias=use_bias,
+        use_bn=use_bn,
         bn_use_global_stats=bn_use_global_stats,
         return_preact=return_preact,
         activate=activate)
+
+
+class DeconvBlock(HybridBlock):
+    """
+    Deconvolution block with batch normalization and activation.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    kernel_size : int or tuple/list of 2 int
+        Convolution window size.
+    strides : int or tuple/list of 2 int
+        Strides of the deconvolution.
+    padding : int or tuple/list of 2 int
+        Padding value for deconvolution layer.
+    out_padding : int or tuple/list of 2 int
+        Output padding value for deconvolution layer.
+    dilation : int or tuple/list of 2 int, default 1
+        Dilation value for deconvolution layer.
+    groups : int, default 1
+        Number of groups.
+    use_bias : bool, default False
+        Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
+    bn_epsilon : float, default 1e-5
+        Small float added to variance in Batch norm.
+    bn_use_global_stats : bool, default False
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool, default False
+        Whether to disable CUDNN batch normalization operator.
+    activation : function or str or None, default nn.Activation('relu')
+        Activation function or name of activation function.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size,
+                 strides,
+                 padding,
+                 out_padding=0,
+                 dilation=1,
+                 groups=1,
+                 use_bias=False,
+                 use_bn=True,
+                 bn_epsilon=1e-5,
+                 bn_use_global_stats=False,
+                 bn_cudnn_off=False,
+                 activation=(lambda: nn.Activation("relu")),
+                 **kwargs):
+        super(DeconvBlock, self).__init__(**kwargs)
+        self.activate = (activation is not None)
+        self.use_bn = use_bn
+
+        with self.name_scope():
+            self.conv = nn.Conv2DTranspose(
+                channels=out_channels,
+                kernel_size=kernel_size,
+                strides=strides,
+                padding=padding,
+                output_padding=out_padding,
+                dilation=dilation,
+                groups=groups,
+                use_bias=use_bias,
+                in_channels=in_channels)
+            if self.use_bn:
+                self.bn = BatchNormExtra(
+                    in_channels=out_channels,
+                    epsilon=bn_epsilon,
+                    use_global_stats=bn_use_global_stats,
+                    cudnn_off=bn_cudnn_off)
+            if self.activate:
+                self.activ = get_activation_layer(activation)
+
+    def hybrid_forward(self, F, x):
+        x = self.conv(x)
+        if self.use_bn:
+            x = self.bn(x)
+        if self.activate:
+            x = self.activ(x)
+        return x
+
+
+class InterpolationBlock(HybridBlock):
+    """
+    Interpolation block.
+
+    Parameters:
+    ----------
+    scale_factor : int
+        Multiplier for spatial size.
+    out_size : tuple of 2 int, default None
+        Spatial size of the output tensor for the bilinear interpolation operation.
+    bilinear : bool, default True
+        Whether to use bilinear interpolation.
+    up : bool, default True
+        Whether to upsample or downsample.
+    """
+    def __init__(self,
+                 scale_factor,
+                 out_size=None,
+                 bilinear=True,
+                 up=True,
+                 **kwargs):
+        super(InterpolationBlock, self).__init__(**kwargs)
+        self.scale_factor = scale_factor
+        self.out_size = out_size
+        self.bilinear = bilinear
+        self.up = up
+
+    def hybrid_forward(self, F, x, size=None):
+        if self.bilinear or (size is not None):
+            out_size = self.calc_out_size(x) if size is None else size
+            return F.contrib.BilinearResize2D(x, height=out_size[0], width=out_size[1])
+        else:
+            return F.UpSampling(x, scale=self.scale_factor, sample_type="nearest")
+
+    def calc_out_size(self, x):
+        if self.out_size is not None:
+            return self.out_size
+        if self.up:
+            return tuple(s * self.scale_factor for s in x.shape[2:])
+        else:
+            return tuple(s // self.scale_factor for s in x.shape[2:])
+
+    def __repr__(self):
+        s = '{name}(scale_factor={scale_factor}, out_size={out_size}, bilinear={bilinear}, up={up})'
+        return s.format(
+            name=self.__class__.__name__,
+            scale_factor=self.scale_factor,
+            out_size=self.out_size,
+            bilinear=self.bilinear,
+            up=self.up)
+
+    def calc_flops(self, x):
+        assert (x.shape[0] == 1)
+        if self.bilinear:
+            num_flops = 9 * x.size
+        else:
+            num_flops = 4 * x.size
+        num_macs = 0
+        return num_flops, num_macs
 
 
 def channel_shuffle(x,
@@ -806,39 +1499,102 @@ class SEBlock(HybridBlock):
         Number of channels.
     reduction : int, default 16
         Squeeze reduction value.
-    approx_sigmoid : bool, default False
-        Whether to use approximated sigmoid function.
-    activation : function, or str, or HybridBlock
-        Activation function or name of activation function.
+    round_mid : bool, default False
+        Whether to round middle channel number (make divisible by 8).
+    use_conv : bool, default True
+        Whether to convolutional layers instead of fully-connected ones.
+    activation : function, or str, or HybridBlock, default 'relu'
+        Activation function after the first convolution.
+    out_activation : function, or str, or HybridBlock, default 'sigmoid'
+        Activation function after the last convolution.
     """
     def __init__(self,
                  channels,
                  reduction=16,
-                 approx_sigmoid=False,
-                 activation=(lambda: nn.Activation("relu")),
+                 round_mid=False,
+                 use_conv=True,
+                 mid_activation=(lambda: nn.Activation("relu")),
+                 out_activation=(lambda: nn.Activation("sigmoid")),
                  **kwargs):
         super(SEBlock, self).__init__(**kwargs)
-        mid_cannels = channels // reduction
+        self.use_conv = use_conv
+        mid_channels = channels // reduction if not round_mid else round_channels(float(channels) / reduction)
 
         with self.name_scope():
-            self.conv1 = conv1x1(
-                in_channels=channels,
-                out_channels=mid_cannels,
-                use_bias=True)
-            self.activ = get_activation_layer(activation)
-            self.conv2 = conv1x1(
-                in_channels=mid_cannels,
-                out_channels=channels,
-                use_bias=True)
-            self.sigmoid = HSigmoid() if approx_sigmoid else nn.Activation("sigmoid")
+            if use_conv:
+                self.conv1 = conv1x1(
+                    in_channels=channels,
+                    out_channels=mid_channels,
+                    use_bias=True)
+            else:
+                self.fc1 = nn.Dense(
+                    in_units=channels,
+                    units=mid_channels)
+            self.activ = get_activation_layer(mid_activation)
+            if use_conv:
+                self.conv2 = conv1x1(
+                    in_channels=mid_channels,
+                    out_channels=channels,
+                    use_bias=True)
+            else:
+                self.fc2 = nn.Dense(
+                    in_units=mid_channels,
+                    units=channels)
+            self.sigmoid = get_activation_layer(out_activation)
 
     def hybrid_forward(self, F, x):
         w = F.contrib.AdaptiveAvgPooling2D(x, output_size=1)
-        w = self.conv1(w)
+        if not self.use_conv:
+            w = F.Flatten(w)
+        w = self.conv1(w) if self.use_conv else self.fc1(w)
         w = self.activ(w)
-        w = self.conv2(w)
+        w = self.conv2(w) if self.use_conv else self.fc2(w)
         w = self.sigmoid(w)
+        if not self.use_conv:
+            w = w.expand_dims(2).expand_dims(3)
         x = F.broadcast_mul(x, w)
+        return x
+
+
+class DucBlock(HybridBlock):
+    """
+    Dense Upsampling Convolution (DUC) block from 'Understanding Convolution for Semantic Segmentation,'
+    https://arxiv.org/abs/1702.08502.
+
+    Parameters:
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    scale_factor : int
+        Multiplier for spatial size.
+    bn_use_global_stats : bool
+        Whether global moving statistics is used instead of local batch-norm for BatchNorm layers.
+    bn_cudnn_off : bool
+        Whether to disable CUDNN batch normalization operator.
+    """
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 scale_factor,
+                 bn_use_global_stats,
+                 bn_cudnn_off,
+                 **kwargs):
+        super(DucBlock, self).__init__(**kwargs)
+        mid_channels = (scale_factor * scale_factor) * out_channels
+
+        with self.name_scope():
+            self.conv = conv3x3_block(
+                in_channels=in_channels,
+                out_channels=mid_channels,
+                bn_use_global_stats=bn_use_global_stats,
+                bn_cudnn_off=bn_cudnn_off)
+            self.pix_shuffle = PixelShuffle2D(factor=scale_factor)
+
+    def hybrid_forward(self, F, x):
+        x = self.conv(x)
+        x = self.pix_shuffle(x)
         return x
 
 
@@ -1017,6 +1773,42 @@ class Concurrent(nn.HybridSequential):
         return out
 
 
+class SequentialConcurrent(nn.HybridSequential):
+    """
+    A sequential container with concatenated outputs.
+    Blocks will be executed in the order they are added.
+
+    Parameters:
+    ----------
+    axis : int, default 1
+        The axis on which to concatenate the outputs.
+    stack : bool, default False
+        Whether to concatenate tensors along a new dimension.
+    cat_input : bool, default True
+        Whether to concatenate input tensor.
+    """
+    def __init__(self,
+                 axis=1,
+                 stack=False,
+                 cat_input=True,
+                 **kwargs):
+        super(SequentialConcurrent, self).__init__(**kwargs)
+        self.axis = axis
+        self.stack = stack
+        self.cat_input = cat_input
+
+    def hybrid_forward(self, F, x):
+        out = [x] if self.cat_input else []
+        for block in self._children.values():
+            x = block(x)
+            out.append(x)
+        if self.stack:
+            out = F.stack(*out, axis=self.axis)
+        else:
+            out = F.concat(*out, dim=self.axis)
+        return out
+
+
 class ParametricConcurrent(nn.HybridSequential):
     """
     A container for concatenation of blocks with parameters.
@@ -1065,17 +1857,26 @@ class Hourglass(HybridBlock):
                  return_first_skip=False,
                  **kwargs):
         super(Hourglass, self).__init__(**kwargs)
-        assert (len(up_seq) == len(down_seq))
-        assert (len(skip_seq) == len(down_seq))
-        assert (merge_type in ["add"])
+        self.depth = len(down_seq)
+        assert (merge_type in ["cat", "add"])
+        assert (len(up_seq) == self.depth)
+        assert (len(skip_seq) in (self.depth, self.depth + 1))
         self.merge_type = merge_type
         self.return_first_skip = return_first_skip
-        self.depth = len(down_seq)
+        self.extra_skip = (len(skip_seq) == self.depth + 1)
 
         with self.name_scope():
             self.down_seq = down_seq
             self.up_seq = up_seq
             self.skip_seq = skip_seq
+
+    def _merge(self, F, x, y):
+        if y is not None:
+            if self.merge_type == "cat":
+                x = F.concat(x, y, dim=1)
+            elif self.merge_type == "add":
+                x = x + y
+        return x
 
     def hybrid_forward(self, F, x):
         y = None
@@ -1088,9 +1889,11 @@ class Hourglass(HybridBlock):
                 y = down_outs[self.depth - i]
                 skip_module = self.skip_seq[self.depth - i]
                 y = skip_module(y)
-                if (y is not None) and (self.merge_type == "add"):
-                    x = x + y
+                x = self._merge(F, x, y)
             if i != len(down_outs) - 1:
+                if (i == 0) and self.extra_skip:
+                    skip_module = self.skip_seq[self.depth]
+                    x = skip_module(x)
                 up_module = self.up_seq[self.depth - 1 - i]
                 x = up_module(x)
         if self.return_first_skip:
@@ -1115,7 +1918,7 @@ class SesquialteralHourglass(HybridBlock):
         The second skip connection modules as sequential.
     down2_seq : nn.Sequential
         The second down modules as sequential.
-    merge_type : str, default 'con'
+    merge_type : str, default 'cat'
         Type of concatenation of up and skip outputs.
     """
     def __init__(self,
@@ -1178,10 +1981,25 @@ class MultiOutputSequential(nn.HybridSequential):
     """
     A sequential container with multiple outputs.
     Blocks will be executed in the order they are added.
+
+    Parameters:
+    ----------
+    multi_output : bool, default True
+        Whether to return multiple output.
+    dual_output : bool, default False
+        Whether to return dual output.
+    return_last : bool, default True
+        Whether to forcibly return last value.
     """
     def __init__(self,
+                 multi_output=True,
+                 dual_output=False,
+                 return_last=True,
                  **kwargs):
         super(MultiOutputSequential, self).__init__(**kwargs)
+        self.multi_output = multi_output
+        self.dual_output = dual_output
+        self.return_last = return_last
 
     def hybrid_forward(self, F, x):
         outs = []
@@ -1189,4 +2007,94 @@ class MultiOutputSequential(nn.HybridSequential):
             x = block(x)
             if hasattr(block, "do_output") and block.do_output:
                 outs.append(x)
-        return [x] + outs
+            elif hasattr(block, "do_output2") and block.do_output2:
+                assert (type(x) == tuple)
+                outs.extend(x[1])
+                x = x[0]
+        if self.multi_output:
+            return [x] + outs if self.return_last else outs
+        elif self.dual_output:
+            return x, outs
+        else:
+            return x
+
+
+class ParallelConcurent(nn.HybridSequential):
+    """
+    A sequential container with multiple inputs and multiple outputs.
+    Modules will be executed in the order they are added.
+    """
+    def __init__(self,
+                 **kwargs):
+        super(ParallelConcurent, self).__init__(**kwargs)
+
+    def hybrid_forward(self, F, x):
+        out = []
+        for block, xi in zip(self._children.values(), x):
+            out.append(block(xi))
+        return out
+
+
+class HeatmapMaxDetBlock(HybridBlock):
+    """
+    Heatmap maximum detector block (for human pose estimation task).
+
+    Parameters:
+    ----------
+    channels : int
+        Number of channels.
+    in_size : tuple of 2 int
+        Spatial size of the input heatmap tensor.
+    fixed_size : bool
+        Whether to expect fixed spatial size of input image.
+    tune : bool, default True
+        Whether to tune point positions.
+    """
+    def __init__(self,
+                 channels,
+                 in_size,
+                 fixed_size,
+                 tune=True,
+                 **kwargs):
+        super(HeatmapMaxDetBlock, self).__init__(**kwargs)
+        self.channels = channels
+        self.in_size = in_size
+        self.fixed_size = fixed_size
+        self.tune = tune
+
+    def hybrid_forward(self, F, x):
+        # assert (not self.fixed_size) or (self.in_size == x.shape[2:])
+        vector_dim = 2
+        in_size = self.in_size if self.fixed_size else x.shape[2:]
+        heatmap_vector = x.reshape((0, 0, -3))
+        indices = heatmap_vector.argmax(axis=vector_dim, keepdims=True)
+        scores = heatmap_vector.max(axis=vector_dim, keepdims=True)
+        scores_mask = (scores > 0.0)
+        pts_x = (indices % in_size[1]) * scores_mask
+        pts_y = (indices / in_size[1]).floor() * scores_mask
+        pts = F.concat(pts_x, pts_y, scores, dim=vector_dim)
+        if self.tune:
+            batch = x.shape[0]
+            for b in range(batch):
+                for k in range(self.channels):
+                    hm = x[b, k, :, :]
+                    px = int(pts[b, k, 0].asscalar())
+                    py = int(pts[b, k, 1].asscalar())
+                    if (0 < px < in_size[1] - 1) and (0 < py < in_size[0] - 1):
+                        pts[b, k, 0] += (hm[py, px + 1] - hm[py, px - 1]).sign() * 0.25
+                        pts[b, k, 1] += (hm[py + 1, px] - hm[py - 1, px]).sign() * 0.25
+        return pts
+
+    def __repr__(self):
+        s = "{name}(channels={channels}, in_size={in_size}, fixed_size={fixed_size})"
+        return s.format(
+            name=self.__class__.__name__,
+            channels=self.channels,
+            in_size=self.in_size,
+            fixed_size=self.fixed_size)
+
+    def calc_flops(self, x):
+        assert (x.shape[0] == 1)
+        num_flops = x.size + 26 * self.channels
+        num_macs = 0
+        return num_flops, num_macs

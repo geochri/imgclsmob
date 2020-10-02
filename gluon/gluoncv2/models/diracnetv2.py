@@ -28,7 +28,6 @@ class DiracConv(HybridBlock):
     padding : int or tuple/list of 2 int
         Padding value for convolution layer.
     """
-
     def __init__(self,
                  in_channels,
                  out_channels,
@@ -54,7 +53,8 @@ class DiracConv(HybridBlock):
 
 
 def dirac_conv3x3(in_channels,
-                  out_channels):
+                  out_channels,
+                  **kwargs):
     """
     3x3 version of the DiracNetV2 specific convolution block.
 
@@ -70,7 +70,8 @@ def dirac_conv3x3(in_channels,
         out_channels=out_channels,
         kernel_size=3,
         strides=1,
-        padding=1)
+        padding=1,
+        **kwargs)
 
 
 class DiracInitBlock(HybridBlock):

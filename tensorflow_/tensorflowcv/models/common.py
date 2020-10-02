@@ -2,14 +2,80 @@
     Common routines for models in TensorFlow.
 """
 
-__all__ = ['is_channels_first', 'get_channel_axis', 'flatten', 'batchnorm', 'maxpool2d', 'avgpool2d', 'conv2d',
-           'conv1x1', 'conv3x3', 'depthwise_conv3x3', 'conv_block', 'conv1x1_block', 'conv3x3_block', 'conv7x7_block',
-           'dwconv3x3_block', 'dwconv5x5_block', 'pre_conv_block', 'pre_conv1x1_block', 'pre_conv3x3_block', 'se_block',
-           'channel_shuffle', 'channel_shuffle2']
+__all__ = ['round_channels', 'hswish', 'is_channels_first', 'get_channel_axis', 'flatten', 'batchnorm', 'maxpool2d',
+           'avgpool2d', 'conv2d', 'conv1x1', 'conv3x3', 'depthwise_conv3x3', 'conv_block', 'conv1x1_block',
+           'conv3x3_block', 'conv7x7_block', 'dwconv3x3_block', 'dwconv5x5_block', 'pre_conv_block',
+           'pre_conv1x1_block', 'pre_conv3x3_block', 'se_block', 'channel_shuffle', 'channel_shuffle2']
 
 import math
 import numpy as np
 import tensorflow as tf
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
+
+
+def round_channels(channels,
+                   divisor=8):
+    """
+    Round weighted channel number (make divisible operation).
+
+    Parameters:
+    ----------
+    channels : int or float
+        Original number of channels.
+    divisor : int, default 8
+        Alignment value.
+
+    Returns
+    -------
+    int
+        Weighted number of channels.
+    """
+    rounded_channels = max(int(channels + divisor / 2.0) // divisor * divisor, divisor)
+    if float(rounded_channels) < 0.9 * channels:
+        rounded_channels += divisor
+    return rounded_channels
+
+
+def hsigmoid(x,
+             name="hsigmoid"):
+    """
+    Approximated sigmoid function, so-called hard-version of sigmoid from 'Searching for MobileNetV3,'
+    https://arxiv.org/abs/1905.02244.
+
+    Parameters:
+    ----------
+    x : Tensor
+        Input tensor.
+    name : str, default 'hsigmoid'
+        Block name.
+
+    Returns
+    -------
+    Tensor
+        Resulted tensor.
+    """
+    return tf.nn.relu6(x + 3.0, name=name) / 6.0
+
+
+def hswish(x,
+           name="hswish"):
+    """
+    H-Swish activation function from 'Searching for MobileNetV3,' https://arxiv.org/abs/1905.02244.
+
+    Parameters:
+    ----------
+    x : Tensor
+        Input tensor.
+    name : str, default 'hswish'
+        Block name.
+
+    Returns
+    -------
+    Tensor
+        Resulted tensor.
+    """
+    return x * tf.nn.relu6(x + 3.0, name=name) / 6.0
 
 
 def get_activation_layer(x,
@@ -38,6 +104,8 @@ def get_activation_layer(x,
             x = tf.nn.relu(x, name=name)
         elif activation == "relu6":
             x = tf.nn.relu6(x, name=name)
+        elif activation == "hswish":
+            x = hswish(x, name=name)
         else:
             raise NotImplementedError()
     else:
@@ -131,13 +199,13 @@ def batchnorm(x,
     Tensor
         Resulted tensor.
     """
-    x = tf.layers.batch_normalization(
-        inputs=x,
+    x = tf.keras.layers.BatchNormalization(
         axis=get_channel_axis(data_format),
         momentum=momentum,
         epsilon=epsilon,
-        training=training,
-        name=name)
+        name=name)(
+        inputs=x,
+        training=training)
     return x
 
 
@@ -192,17 +260,16 @@ def maxpool2d(x,
 
     if (padding[0] > 0) or (padding[1] > 0):
         if is_channels_first(data_format):
-            x = tf.pad(x, [[0, 0], [0, 0], list(padding), list(padding)], mode="REFLECT")
+            x = tf.pad(x, [[0, 0], [0, 0], [padding[0]] * 2, [padding[1]] * 2], mode="REFLECT")
         else:
-            x = tf.pad(x, [[0, 0], list(padding), list(padding), [0, 0]], mode="REFLECT")
+            x = tf.pad(x, [[0, 0], [padding[0]] * 2, [padding[1]] * 2, [0, 0]], mode="REFLECT")
 
-    x = tf.layers.max_pooling2d(
-        inputs=x,
+    x = tf.keras.layers.MaxPooling2D(
         pool_size=pool_size,
         strides=strides,
         padding="valid",
         data_format=data_format,
-        name=name)
+        name=name)(x)
     return x
 
 
@@ -257,26 +324,24 @@ def avgpool2d(x,
 
     if (padding[0] > 0) or (padding[1] > 0):
         if is_channels_first(data_format):
-            x = tf.pad(x, [[0, 0], [0, 0], list(padding), list(padding)], mode="CONSTANT")
+            x = tf.pad(x, [[0, 0], [0, 0], [padding[0]] * 2, [padding[1]] * 2], mode="CONSTANT")
         else:
-            x = tf.pad(x, [[0, 0], list(padding), list(padding), [0, 0]], mode="CONSTANT")
+            x = tf.pad(x, [[0, 0], [padding[0]] * 2, [padding[1]] * 2, [0, 0]], mode="CONSTANT")
 
-    x = tf.layers.average_pooling2d(
-        inputs=x,
+    x = tf.keras.layers.AveragePooling2D(
         pool_size=pool_size,
         strides=1,
         padding="valid",
         data_format=data_format,
-        name=name)
+        name=name)(x)
 
     if (strides[0] > 1) or (strides[1] > 1):
-        x = tf.layers.average_pooling2d(
-            inputs=x,
+        x = tf.keras.layers.AveragePooling2D(
             pool_size=1,
             strides=strides,
             padding="valid",
             data_format=data_format,
-            name=name + "/stride")
+            name=name + "/stride")(x)
     return x
 
 
@@ -335,14 +400,13 @@ def conv2d(x,
 
     if (padding[0] > 0) or (padding[1] > 0):
         if is_channels_first(data_format):
-            paddings_tf = [[0, 0], [0, 0], list(padding), list(padding)]
+            paddings_tf = [[0, 0], [0, 0], [padding[0]] * 2, [padding[1]] * 2]
         else:
-            paddings_tf = [[0, 0], list(padding), list(padding), [0, 0]]
+            paddings_tf = [[0, 0], [padding[0]] * 2, [padding[1]] * 2, [0, 0]]
         x = tf.pad(x, paddings=paddings_tf)
 
     if groups == 1:
-        x = tf.layers.conv2d(
-            inputs=x,
+        x = tf.keras.layers.Conv2D(
             filters=out_channels,
             kernel_size=kernel_size,
             strides=strides,
@@ -350,14 +414,14 @@ def conv2d(x,
             data_format=data_format,
             dilation_rate=dilation,
             use_bias=use_bias,
-            kernel_initializer=tf.contrib.layers.variance_scaling_initializer(2.0),
-            name=name)
+            kernel_initializer=tf.keras.initializers.VarianceScaling(2.0),
+            name=name)(x)
     elif (groups == out_channels) and (out_channels == in_channels):
         assert (dilation[0] == 1) and (dilation[1] == 1)
-        kernel = tf.get_variable(
+        kernel = tf.compat.v1.get_variable(
             name=name + "/dw_kernel",
             shape=kernel_size + (in_channels, 1),
-            initializer=tf.variance_scaling_initializer(2.0))
+            initializer=tf.keras.initializers.VarianceScaling(2.0))
         x = tf.nn.depthwise_conv2d(
             input=x,
             filter=kernel,
@@ -379,8 +443,7 @@ def conv2d(x,
                 xi = x[:, gi * in_group_channels:(gi + 1) * in_group_channels, :, :]
             else:
                 xi = x[:, :, :, gi * in_group_channels:(gi + 1) * in_group_channels]
-            xi = tf.layers.conv2d(
-                inputs=xi,
+            xi = tf.keras.layers.Conv2D(
                 filters=out_group_channels,
                 kernel_size=kernel_size,
                 strides=strides,
@@ -389,7 +452,7 @@ def conv2d(x,
                 dilation_rate=dilation,
                 use_bias=use_bias,
                 kernel_initializer=tf.contrib.layers.variance_scaling_initializer(2.0),
-                name=name + "/convgroup{}".format(gi + 1))
+                name=name + "/convgroup{}".format(gi + 1))(xi)
             group_list.append(xi)
         x = tf.concat(group_list, axis=get_channel_axis(data_format), name=name + "/concat")
 
@@ -542,6 +605,7 @@ def conv_block(x,
                dilation=1,
                groups=1,
                use_bias=False,
+               use_bn=True,
                activation="relu",
                training=False,
                data_format="channels_last",
@@ -569,6 +633,8 @@ def conv_block(x,
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     activation : function or str or None, default 'relu'
         Activation function or name of activation function.
     training : bool, or a TensorFlow boolean scalar tensor, default False
@@ -595,11 +661,12 @@ def conv_block(x,
         use_bias=use_bias,
         data_format=data_format,
         name=name + "/conv")
-    x = batchnorm(
-        x=x,
-        training=training,
-        data_format=data_format,
-        name=name + "/bn")
+    if use_bn:
+        x = batchnorm(
+            x=x,
+            training=training,
+            data_format=data_format,
+            name=name + "/bn")
     if activation is not None:
         x = get_activation_layer(
             x=x,
@@ -672,6 +739,7 @@ def conv3x3_block(x,
                   dilation=1,
                   groups=1,
                   use_bias=False,
+                  use_bn=True,
                   activation="relu",
                   training=False,
                   data_format="channels_last",
@@ -697,6 +765,8 @@ def conv3x3_block(x,
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     activation : function or str or None, default 'relu'
         Activation function or name of activation function.
     training : bool, or a TensorFlow boolean scalar tensor, default False
@@ -721,6 +791,7 @@ def conv3x3_block(x,
         dilation=dilation,
         groups=groups,
         use_bias=use_bias,
+        use_bn=use_bn,
         activation=activation,
         training=training,
         data_format=data_format,
@@ -1218,6 +1289,8 @@ def channel_shuffle2(x,
 def se_block(x,
              channels,
              reduction=16,
+             approx_sigmoid=False,
+             round_mid=False,
              activation="relu",
              data_format="channels_last",
              name="se_block"):
@@ -1232,6 +1305,10 @@ def se_block(x,
         Number of channels.
     reduction : int, default 16
         Squeeze reduction value.
+    approx_sigmoid : bool, default False
+        Whether to use approximated sigmoid function.
+    round_mid : bool, default False
+        Whether to round middle channel number (make divisible by 8).
     activation : function or str, default 'relu'
         Activation function or name of activation function.
     data_format : str, default 'channels_last'
@@ -1245,19 +1322,18 @@ def se_block(x,
         Resulted tensor.
     """
     assert(len(x.shape) == 4)
-    mid_cannels = channels // reduction
+    mid_channels = channels // reduction if not round_mid else round_channels(float(channels) / reduction)
     pool_size = x.shape[2:4] if is_channels_first(data_format) else x.shape[1:3]
 
-    w = tf.layers.average_pooling2d(
-        inputs=x,
+    w = tf.keras.layers.AveragePooling2D(
         pool_size=pool_size,
         strides=1,
         data_format=data_format,
-        name=name + "/pool")
+        name=name + "/pool")(x)
     w = conv1x1(
         x=w,
         in_channels=channels,
-        out_channels=mid_cannels,
+        out_channels=mid_channels,
         use_bias=True,
         data_format=data_format,
         name=name + "/conv1/conv")
@@ -1267,11 +1343,11 @@ def se_block(x,
         name=name + "/activ")
     w = conv1x1(
         x=w,
-        in_channels=mid_cannels,
+        in_channels=mid_channels,
         out_channels=channels,
         use_bias=True,
         data_format=data_format,
         name=name + "/conv2/conv")
-    w = tf.nn.sigmoid(w, name=name + "/sigmoid")
+    w = hsigmoid(w, name=name + "/hsigmoid") if approx_sigmoid else tf.nn.sigmoid(w, name=name + "/sigmoid")
     x = x * w
     return x

@@ -73,7 +73,8 @@ def drn_conv1x1(in_channels,
                 out_channels,
                 strides,
                 bn_use_global_stats,
-                activate):
+                activate,
+                **kwargs):
     """
     1x1 version of the DRN specific convolution block.
 
@@ -98,7 +99,8 @@ def drn_conv1x1(in_channels,
         padding=0,
         dilation=1,
         bn_use_global_stats=bn_use_global_stats,
-        activate=activate)
+        activate=activate,
+        **kwargs)
 
 
 def drn_conv3x3(in_channels,
@@ -106,7 +108,8 @@ def drn_conv3x3(in_channels,
                 strides,
                 dilation,
                 bn_use_global_stats,
-                activate):
+                activate,
+                **kwargs):
     """
     3x3 version of the DRN specific convolution block.
 
@@ -133,7 +136,8 @@ def drn_conv3x3(in_channels,
         padding=dilation,
         dilation=dilation,
         bn_use_global_stats=bn_use_global_stats,
-        activate=activate)
+        activate=activate,
+        **kwargs)
 
 
 class DRNBlock(HybridBlock):
@@ -156,7 +160,7 @@ class DRNBlock(HybridBlock):
     def __init__(self,
                  in_channels,
                  out_channels,
-                 stride,
+                 strides,
                  dilation,
                  bn_use_global_stats,
                  **kwargs):
@@ -165,7 +169,7 @@ class DRNBlock(HybridBlock):
             self.conv1 = drn_conv3x3(
                 in_channels=in_channels,
                 out_channels=out_channels,
-                strides=stride,
+                strides=strides,
                 dilation=dilation,
                 bn_use_global_stats=bn_use_global_stats,
                 activate=True)
@@ -298,7 +302,7 @@ class DRNUnit(HybridBlock):
                 self.body = DRNBlock(
                     in_channels=in_channels,
                     out_channels=out_channels,
-                    stride=strides,
+                    strides=strides,
                     dilation=dilation,
                     bn_use_global_stats=bn_use_global_stats)
             if self.resize_identity:
@@ -324,7 +328,8 @@ class DRNUnit(HybridBlock):
 
 def drn_init_block(in_channels,
                    out_channels,
-                   bn_use_global_stats):
+                   bn_use_global_stats,
+                   **kwargs):
     """
     DRN specific initial block.
 
@@ -345,7 +350,8 @@ def drn_init_block(in_channels,
         padding=3,
         dilation=1,
         bn_use_global_stats=bn_use_global_stats,
-        activate=True)
+        activate=True,
+        **kwargs)
 
 
 class DRN(HybridBlock):

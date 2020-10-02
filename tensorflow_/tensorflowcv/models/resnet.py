@@ -11,6 +11,8 @@ __all__ = ['ResNet', 'resnet10', 'resnet12', 'resnet14', 'resnetbc14b', 'resnet1
 import os
 import tensorflow as tf
 from .common import conv1x1_block, conv3x3_block, conv7x7_block, maxpool2d, is_channels_first, flatten
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
 
 
 def res_block(x,
@@ -341,21 +343,19 @@ class ResNet(object):
                     data_format=self.data_format,
                     name="features/stage{}/unit{}".format(i + 1, j + 1))
                 in_channels = out_channels
-        x = tf.layers.average_pooling2d(
-            inputs=x,
+        x = tf.keras.layers.AveragePooling2D(
             pool_size=7,
             strides=1,
             data_format=self.data_format,
-            name="features/final_pool")
+            name="features/final_pool")(x)
 
         # x = tf.layers.flatten(x)
         x = flatten(
             x=x,
             data_format=self.data_format)
-        x = tf.layers.dense(
-            inputs=x,
+        x = tf.keras.layers.Dense(
             units=self.classes,
-            name="output")
+            name="output")(x)
 
         return x
 
@@ -884,6 +884,9 @@ def resnet200b(**kwargs):
 
 def _test():
     import numpy as np
+
+    # import logging
+    # logging.getLogger("tensorflow").disabled = True
 
     data_format = "channels_last"
     pretrained = False

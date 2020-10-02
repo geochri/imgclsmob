@@ -5,8 +5,10 @@
 import os
 import cv2
 import numpy as np
-# import mxnet as mx
+import mxnet as mx
 from mxnet.gluon.data import dataset
+from mxnet.gluon.data.vision import transforms
+from .dataset_metainfo import DatasetMetaInfo
 
 
 class HPatches(dataset.Dataset):
@@ -52,16 +54,68 @@ class HPatches(dataset.Dataset):
                 self.warped_image_paths.append(os.path.join(subdir_path, str(k) + image_file_ext))
                 self.homographies.append(np.loadtxt(os.path.join(subdir_path, "H_1_" + str(k))))
 
-        self._transform = transform
+        self.transform = transform
 
     def __getitem__(self, index):
-        image = cv2.imread(self.image_paths[index], flags=cv2.IMREAD_GRAYSCALE)
-        warped_image = cv2.imread(self.warped_image_paths[index], flags=cv2.IMREAD_GRAYSCALE)
-        homography = self.homographies[index]
+        # image = cv2.imread(self.image_paths[index], flags=cv2.IMREAD_GRAYSCALE)
+        # warped_image = cv2.imread(self.warped_image_paths[index], flags=cv2.IMREAD_GRAYSCALE)
+        # image = mx.image.imread(self.image_paths[index], flag=0)
+        # warped_image = mx.image.imread(self.warped_image_paths[index], flag=0)
+        print("Image file name: {}, index: {}".format(self.image_paths[index], index))
+
+        image = cv2.imread(self.image_paths[index], flags=0)
+        if image.shape[0] > 1500:
+            image = cv2.resize(
+                src=image,
+                dsize=None,
+                fx=0.5,
+                fy=0.5,
+                interpolation=cv2.INTER_AREA)
+        image = mx.nd.array(np.expand_dims(image, axis=2))
+        print("Image shape: {}".format(image.shape))
+
+        warped_image = cv2.imread(self.warped_image_paths[index], flags=0)
+        if warped_image.shape[0] > 1500:
+            warped_image = cv2.resize(
+                src=warped_image,
+                dsize=None,
+                fx=0.5,
+                fy=0.5,
+                interpolation=cv2.INTER_AREA)
+        warped_image = mx.nd.array(np.expand_dims(warped_image, axis=2))
+        print("W-Image shape: {}".format(warped_image.shape))
+        homography = mx.nd.array(self.homographies[index])
+
+        if self.transform is not None:
+            image = self.transform(image)
+            warped_image = self.transform(warped_image)
+
         return image, warped_image, homography
 
     def __len__(self):
         return len(self.image_paths)
+
+
+class HPatchesMetaInfo(DatasetMetaInfo):
+    def __init__(self):
+        super(HPatchesMetaInfo, self).__init__()
+        self.label = "hpatches"
+        self.short_label = "hpatches"
+        self.root_dir_name = "hpatches"
+        self.dataset_class = HPatches
+        self.ml_type = "imgmch"
+        self.do_transform = True
+        self.val_transform = hpatches_val_transform
+        self.test_transform = hpatches_val_transform
+        self.allow_hybridize = False
+        self.test_net_extra_kwargs = {"hybridizable": False, "in_size": None}
+
+
+def hpatches_val_transform(ds_metainfo):
+    assert (ds_metainfo is not None)
+    return transforms.Compose([
+        transforms.ToTensor()
+    ])
 
 
 def _test():

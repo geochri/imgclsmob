@@ -1,3 +1,7 @@
+"""
+    Script for training model on MXNet/Gluon.
+"""
+
 import argparse
 import time
 import logging
@@ -13,7 +17,7 @@ from common.logger_utils import initialize_logging
 from common.train_log_param_saver import TrainLogParamSaver
 from gluon.lr_scheduler import LRScheduler
 from gluon.utils import prepare_mx_context, prepare_model, validate
-from gluon.utils import report_accuracy, get_composite_metric, get_metric_name
+from gluon.utils import report_accuracy, get_composite_metric, get_metric_name, get_initializer, get_loss
 
 from gluon.dataset_utils import get_dataset_metainfo
 from gluon.dataset_utils import get_train_data_source, get_val_data_source
@@ -21,6 +25,14 @@ from gluon.dataset_utils import get_batch_fn
 
 
 def add_train_cls_parser_arguments(parser):
+    """
+    Create python script parameters (for training/classification specific subpart).
+
+    Parameters:
+    ----------
+    parser : ArgumentParser
+        ArgumentParser instance.
+    """
     parser.add_argument(
         "--model",
         type=str,
@@ -49,6 +61,11 @@ def add_train_cls_parser_arguments(parser):
         type=str,
         default="",
         help="resume from previously saved optimizer state if not None")
+    parser.add_argument(
+        "--initializer",
+        type=str,
+        default="MSRAPrelu",
+        help="initializer name. options are MSRAPrelu, Xavier and Xavier-gaussian-out-2")
 
     parser.add_argument(
         "--num-gpus",
@@ -186,7 +203,7 @@ def add_train_cls_parser_arguments(parser):
     parser.add_argument(
         "--mixup-epoch-tail",
         type=int,
-        default=20,
+        default=12,
         help="number of epochs without mixup at the end of training")
 
     parser.add_argument(
@@ -223,7 +240,7 @@ def add_train_cls_parser_arguments(parser):
     parser.add_argument(
         "--log-pip-packages",
         type=str,
-        default="mxnet-cu100",
+        default="mxnet-cu101",
         help="list of pip packages for logging")
 
     parser.add_argument(
@@ -234,6 +251,14 @@ def add_train_cls_parser_arguments(parser):
 
 
 def parse_args():
+    """
+    Parse python script parameters (common part).
+
+    Returns
+    -------
+    ArgumentParser
+        Resulted args.
+    """
     parser = argparse.ArgumentParser(
         description="Train a model for image classification (Gluon)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -261,6 +286,19 @@ def parse_args():
 
 
 def init_rand(seed):
+    """
+    Initialize all random generators by seed.
+
+    Parameters:
+    ----------
+    seed : int
+        Seed value.
+
+    Returns
+    -------
+    int
+        Generated seed value.
+    """
     if seed <= 0:
         seed = np.random.randint(10000)
     random.seed(seed)
@@ -291,7 +329,63 @@ def prepare_trainer(net,
                     beta_wd_mult=1.0,
                     bias_wd_mult=1.0,
                     state_file_path=None):
+    """
+    Prepare trainer.
 
+    Parameters:
+    ----------
+    net : HybridBlock
+        Model.
+    optimizer_name : str
+        Name of optimizer.
+    wd : float
+        Weight decay rate.
+    momentum : float
+        Momentum value.
+    lr_mode : str
+        Learning rate scheduler mode.
+    lr : float
+        Learning rate.
+    lr_decay_period : int
+        Interval for periodic learning rate decays.
+    lr_decay_epoch : str
+        Epoches at which learning rate decays.
+    lr_decay : float
+        Decay rate of learning rate.
+    target_lr : float
+        Final learning rate.
+    poly_power : float
+        Power value for poly LR scheduler.
+    warmup_epochs : int
+        Number of warmup epochs.
+    warmup_lr : float
+        Starting warmup learning rate.
+    warmup_mode : str
+        Learning rate scheduler warmup mode.
+    batch_size : int
+        Training batch size.
+    num_epochs : int
+        Number of training epochs.
+    num_training_samples : int
+        Number of training samples in dataset.
+    dtype : str
+        Base data type for tensors.
+    gamma_wd_mult : float
+        Weight decay multiplier for batchnorm gamma.
+    beta_wd_mult : float
+        Weight decay multiplier for batchnorm beta.
+    bias_wd_mult : float
+        Weight decay multiplier for bias.
+    state_file_path : str, default None
+        Path for file with trainer state.
+
+    Returns
+    -------
+    Trainer
+        Trainer.
+    LRScheduler
+        Learning rate scheduler.
+    """
     if gamma_wd_mult != 1.0:
         for k, v in net.collect_params(".*gamma").items():
             v.wd_mult = gamma_wd_mult
@@ -349,6 +443,18 @@ def prepare_trainer(net,
 def save_params(file_stem,
                 net,
                 trainer):
+    """
+    Save current model/trainer parameters.
+
+    Parameters:
+    ----------
+    file_stem : str
+        File stem (with path).
+    net : HybridBlock
+        Model.
+    trainer : Trainer
+        Trainer.
+    """
     net.save_parameters(file_stem + ".params")
     trainer.save_states(file_stem + ".states")
 
@@ -373,7 +479,57 @@ def train_epoch(epoch,
                 num_epochs,
                 grad_clip_value,
                 batch_size_scale):
+    """
+    Train model on particular epoch.
 
+    Parameters:
+    ----------
+    epoch : int
+        Epoch number.
+    net : HybridBlock
+        Model.
+    train_metric : EvalMetric
+        Metric object instance.
+    train_data : DataLoader or ImageRecordIter
+        Data loader or ImRec-iterator.
+    batch_fn : func
+        Function for splitting data after extraction from data loader.
+    data_source_needs_reset : bool
+        Whether to reset data (if test_data is ImageRecordIter).
+    dtype : str
+        Base data type for tensors.
+    ctx : Context
+        MXNet context.
+    loss_func : Loss
+        Loss function.
+    trainer : Trainer
+        Trainer.
+    lr_scheduler : LRScheduler
+        Learning rate scheduler.
+    batch_size : int
+        Training batch size.
+    log_interval : int
+        Batch count period for logging.
+    mixup : bool
+        Whether to use mixup.
+    mixup_epoch_tail : int
+        Number of epochs without mixup at the end of training.
+    label_smoothing : bool
+        Whether to use label-smoothing.
+    num_classes : int
+        Number of model classes.
+    num_epochs : int
+        Number of training epochs.
+    grad_clip_value : float
+        Threshold for gradient clipping.
+    batch_size_scale : int
+        Manual batch-size increasing factor.
+
+    Returns
+    -------
+    float
+        Loss value.
+    """
     labels_list_inds = None
     batch_size_extend_count = 0
     tic = time.time()
@@ -382,6 +538,7 @@ def train_epoch(epoch,
     train_metric.reset()
     train_loss = 0.0
 
+    i = 0
     btic = time.time()
     for i, batch in enumerate(train_data):
         data_list, labels_list = batch_fn(batch, ctx)
@@ -475,8 +632,60 @@ def train_net(batch_size,
               batch_size_scale,
               val_metric,
               train_metric,
+              loss_func,
               ctx):
+    """
+    Main procedure for training model.
 
+    Parameters:
+    ----------
+    batch_size : int
+        Training batch size.
+    num_epochs : int
+        Number of training epochs.
+    start_epoch1 : int
+        Number of starting epoch (1-based).
+    train_data : DataLoader or ImageRecordIter
+        Data loader or ImRec-iterator (training subset).
+    val_data : DataLoader or ImageRecordIter
+        Data loader or ImRec-iterator (validation subset).
+    batch_fn : func
+        Function for splitting data after extraction from data loader.
+    data_source_needs_reset : bool
+        Whether to reset data (if test_data is ImageRecordIter).
+    dtype : str
+        Base data type for tensors.
+    net : HybridBlock
+        Model.
+    trainer : Trainer
+        Trainer.
+    lr_scheduler : LRScheduler
+        Learning rate scheduler.
+    lp_saver : TrainLogParamSaver
+        Model/trainer state saver.
+    log_interval : int
+        Batch count period for logging.
+    mixup : bool
+        Whether to use mixup.
+    mixup_epoch_tail : int
+        Number of epochs without mixup at the end of training.
+    label_smoothing : bool
+        Whether to use label-smoothing.
+    num_classes : int
+        Number of model classes.
+    grad_clip_value : float
+        Threshold for gradient clipping.
+    batch_size_scale : int
+        Manual batch-size increasing factor.
+    val_metric : EvalMetric
+        Metric object instance (validation subset).
+    train_metric : EvalMetric
+        Metric object instance (training subset).
+    loss_func : Loss
+        Loss object instance.
+    ctx : Context
+        MXNet context.
+    """
     if batch_size_scale != 1:
         for p in net.collect_params().values():
             p.grad_req = "add"
@@ -484,7 +693,7 @@ def train_net(batch_size,
     if isinstance(ctx, mx.Context):
         ctx = [ctx]
 
-    loss_func = gluon.loss.SoftmaxCrossEntropyLoss(sparse_label=(not (mixup or label_smoothing)))
+    # loss_func = gluon.loss.SoftmaxCrossEntropyLoss(sparse_label=(not (mixup or label_smoothing)))
 
     assert (type(start_epoch1) == int)
     assert (start_epoch1 >= 1)
@@ -555,6 +764,9 @@ def train_net(batch_size,
 
 
 def main():
+    """
+    Main body of script.
+    """
     args = parse_args()
     args.seed = init_rand(seed=args.seed)
 
@@ -569,21 +781,23 @@ def main():
         num_gpus=args.num_gpus,
         batch_size=args.batch_size)
 
+    ds_metainfo = get_dataset_metainfo(dataset_name=args.dataset)
+    ds_metainfo.update(args=args)
+
     net = prepare_model(
         model_name=args.model,
         use_pretrained=args.use_pretrained,
         pretrained_model_file_path=args.resume.strip(),
         dtype=args.dtype,
+        net_extra_kwargs=ds_metainfo.train_net_extra_kwargs,
         tune_layers=args.tune_layers,
         classes=args.num_classes,
         in_channels=args.in_channels,
         do_hybridize=(not args.not_hybridize),
+        initializer=get_initializer(initializer_name=args.initializer),
         ctx=ctx)
     assert (hasattr(net, "classes"))
     num_classes = net.classes
-
-    ds_metainfo = get_dataset_metainfo(dataset_name=args.dataset)
-    ds_metainfo.update(args=args)
 
     train_data = get_train_data_source(
         ds_metainfo=ds_metainfo,
@@ -593,7 +807,7 @@ def main():
         ds_metainfo=ds_metainfo,
         batch_size=batch_size,
         num_workers=args.num_workers)
-    batch_fn = get_batch_fn(use_imgrec=ds_metainfo.use_imgrec)
+    batch_fn = get_batch_fn(ds_metainfo=ds_metainfo)
 
     num_training_samples = len(train_data._dataset) if not ds_metainfo.use_imgrec else ds_metainfo.num_training_samples
     trainer, lr_scheduler = prepare_trainer(
@@ -644,6 +858,14 @@ def main():
     else:
         lp_saver = None
 
+    val_metric = get_composite_metric(ds_metainfo.val_metric_names, ds_metainfo.val_metric_extra_kwargs)
+    train_metric = get_composite_metric(ds_metainfo.train_metric_names, ds_metainfo.train_metric_extra_kwargs)
+
+    loss_kwargs = {"sparse_label": not (args.mixup or args.label_smoothing)}
+    if ds_metainfo.loss_extra_kwargs is not None:
+        loss_kwargs.update(ds_metainfo.loss_extra_kwargs)
+    loss_func = get_loss(ds_metainfo.loss_name, loss_kwargs)
+
     train_net(
         batch_size=batch_size,
         num_epochs=args.num_epochs,
@@ -664,8 +886,9 @@ def main():
         num_classes=num_classes,
         grad_clip_value=args.grad_clip,
         batch_size_scale=args.batch_size_scale,
-        val_metric=get_composite_metric(ds_metainfo.val_metric_names, ds_metainfo.val_metric_extra_kwargs),
-        train_metric=get_composite_metric(ds_metainfo.train_metric_names, ds_metainfo.train_metric_extra_kwargs),
+        val_metric=val_metric,
+        train_metric=train_metric,
+        loss_func=loss_func,
         ctx=ctx)
 
 

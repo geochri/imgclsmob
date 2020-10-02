@@ -41,8 +41,9 @@ class ProxylessBlock(HybridBlock):
                  strides,
                  bn_epsilon,
                  bn_use_global_stats,
-                 expansion):
-        super(ProxylessBlock, self).__init__()
+                 expansion,
+                 **kwargs):
+        super(ProxylessBlock, self).__init__(**kwargs)
         self.use_bc = (expansion > 1)
         mid_channels = in_channels * expansion
 
@@ -115,8 +116,9 @@ class ProxylessUnit(HybridBlock):
                  bn_use_global_stats,
                  expansion,
                  residual,
-                 shortcut):
-        super(ProxylessUnit, self).__init__()
+                 shortcut,
+                 **kwargs):
+        super(ProxylessUnit, self).__init__(**kwargs)
         assert (residual or shortcut)
         self.residual = residual
         self.shortcut = shortcut
@@ -188,8 +190,9 @@ class ProxylessNAS(HybridBlock):
                  bn_use_global_stats=False,
                  in_channels=3,
                  in_size=(224, 224),
-                 classes=1000):
-        super(ProxylessNAS, self).__init__()
+                 classes=1000,
+                 **kwargs):
+        super(ProxylessNAS, self).__init__(**kwargs)
         self.in_size = in_size
         self.classes = classes
 

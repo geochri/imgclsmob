@@ -1,4 +1,5 @@
 from .models.alexnet import *
+from .models.zfnet import *
 from .models.vgg import *
 from .models.resnet import *
 from .models.preresnet import *
@@ -19,6 +20,7 @@ from .models.shufflenetv2b import *
 from .models.menet import *
 from .models.mobilenet import *
 from .models.mobilenetv2 import *
+from .models.mobilenetv3 import *
 from .models.igcv3 import *
 from .models.mnasnet import *
 
@@ -27,6 +29,10 @@ __all__ = ['get_model', 'init_variables_from_state_dict']
 
 _models = {
     'alexnet': alexnet,
+    'alexnetb': alexnetb,
+
+    'zfnet': zfnet,
+    'zfnetb': zfnetb,
 
     'vgg11': vgg11,
     'vgg13': vgg13,
@@ -115,8 +121,15 @@ _models = {
     'seresnet200': seresnet200,
     'seresnet200b': seresnet200b,
 
+    'sepreresnet10': sepreresnet10,
+    'sepreresnet12': sepreresnet12,
+    'sepreresnet14': sepreresnet14,
+    'sepreresnet16': sepreresnet16,
     'sepreresnet18': sepreresnet18,
+    'sepreresnet26': sepreresnet26,
+    'sepreresnetbc26b': sepreresnetbc26b,
     'sepreresnet34': sepreresnet34,
+    'sepreresnetbc38b': sepreresnetbc38b,
     'sepreresnet50': sepreresnet50,
     'sepreresnet50b': sepreresnet50b,
     'sepreresnet101': sepreresnet101,
@@ -208,12 +221,25 @@ _models = {
     'mobilenetv2_wd2': mobilenetv2_wd2,
     'mobilenetv2_wd4': mobilenetv2_wd4,
 
+    'mobilenetv3_small_w7d20': mobilenetv3_small_w7d20,
+    'mobilenetv3_small_wd2': mobilenetv3_small_wd2,
+    'mobilenetv3_small_w3d4': mobilenetv3_small_w3d4,
+    'mobilenetv3_small_w1': mobilenetv3_small_w1,
+    'mobilenetv3_small_w5d4': mobilenetv3_small_w5d4,
+    'mobilenetv3_large_w7d20': mobilenetv3_large_w7d20,
+    'mobilenetv3_large_wd2': mobilenetv3_large_wd2,
+    'mobilenetv3_large_w3d4': mobilenetv3_large_w3d4,
+    'mobilenetv3_large_w1': mobilenetv3_large_w1,
+    'mobilenetv3_large_w5d4': mobilenetv3_large_w5d4,
+
     'igcv3_w1': igcv3_w1,
     'igcv3_w3d4': igcv3_w3d4,
     'igcv3_wd2': igcv3_wd2,
     'igcv3_wd4': igcv3_wd4,
 
-    'mnasnet': mnasnet,
+    'mnasnet_b1': mnasnet_b1,
+    'mnasnet_a1': mnasnet_a1,
+    'mnasnet_small': mnasnet_small,
 }
 
 

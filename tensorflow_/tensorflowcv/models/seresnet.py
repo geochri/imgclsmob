@@ -182,21 +182,19 @@ class SEResNet(object):
                     data_format=self.data_format,
                     name="features/stage{}/unit{}".format(i + 1, j + 1))
                 in_channels = out_channels
-        x = tf.layers.average_pooling2d(
-            inputs=x,
+        x = tf.keras.layers.AveragePooling2D(
             pool_size=7,
             strides=1,
             data_format=self.data_format,
-            name="features/final_pool")
+            name="features/final_pool")(x)
 
         # x = tf.layers.flatten(x)
         x = flatten(
             x=x,
             data_format=self.data_format)
-        x = tf.layers.dense(
-            inputs=x,
+        x = tf.keras.layers.Dense(
             units=self.classes,
-            name="output")
+            name="output")(x)
 
         return x
 
@@ -421,7 +419,7 @@ def seresnet26(**kwargs):
 
 def seresnetbc26b(**kwargs):
     """
-    SE-ResNet-BC-26 model from 'Squeeze-and-Excitation Networks,' https://arxiv.org/abs/1709.01507.
+    SE-ResNet-BC-26b model from 'Squeeze-and-Excitation Networks,' https://arxiv.org/abs/1709.01507.
     It's an experimental model (bottleneck compressed).
 
     Parameters:
@@ -460,7 +458,7 @@ def seresnet34(**kwargs):
 
 def seresnetbc38b(**kwargs):
     """
-    SE-ResNet-BC-38 model from 'Squeeze-and-Excitation Networks,' https://arxiv.org/abs/1709.01507.
+    SE-ResNet-BC-38b model from 'Squeeze-and-Excitation Networks,' https://arxiv.org/abs/1709.01507.
     It's an experimental model (bottleneck compressed).
 
     Parameters:

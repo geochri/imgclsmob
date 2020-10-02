@@ -4,12 +4,12 @@
     https://arxiv.org/abs/1404.5997.
 """
 
-__all__ = ['alexnet_model', 'alexnet']
+__all__ = ['alexnet_model', 'alexnet', 'alexnetb']
 
 import os
 from keras import layers as nn
 from keras.models import Model
-from .common import conv2d, is_channels_first, flatten
+from .common import conv_block, maxpool2d, is_channels_first, flatten, lrn
 
 
 def alex_conv(x,
@@ -18,6 +18,7 @@ def alex_conv(x,
               kernel_size,
               strides,
               padding,
+              use_lrn,
               name="alex_conv"):
     """
     AlexNet specific convolution block.
@@ -36,6 +37,8 @@ def alex_conv(x,
         Strides of the convolution.
     padding : int or tuple/list of 2 int
         Padding value for convolution layer.
+    use_lrn : bool
+        Whether to use LRN layer.
     name : str, default 'alex_conv'
         Block name.
 
@@ -44,7 +47,7 @@ def alex_conv(x,
     keras.backend tensor/variable/symbol
         Resulted tensor/variable/symbol.
     """
-    x = conv2d(
+    x = conv_block(
         x=x,
         in_channels=in_channels,
         out_channels=out_channels,
@@ -52,8 +55,10 @@ def alex_conv(x,
         strides=strides,
         padding=padding,
         use_bias=True,
+        use_bn=False,
         name=name + "/conv")
-    x = nn.Activation("relu", name=name + "/activ")(x)
+    if use_lrn:
+        x = lrn(x)
     return x
 
 
@@ -137,6 +142,7 @@ def alexnet_model(channels,
                   kernel_sizes,
                   strides,
                   paddings,
+                  use_lrn,
                   in_channels=3,
                   in_size=(224, 224),
                   classes=1000):
@@ -154,6 +160,8 @@ def alexnet_model(channels,
         Strides of the convolution for each unit.
     paddings : list of list of int or tuple/list of 2 int
         Padding value for convolution layer for each unit.
+    use_lrn : bool
+        Whether to use LRN layer.
     in_channels : int, default 3
         Number of input channels.
     in_size : tuple of two ints, default (224, 224)
@@ -167,6 +175,7 @@ def alexnet_model(channels,
 
     x = input
     for i, channels_per_stage in enumerate(channels):
+        use_lrn_i = use_lrn and (i in [0, 1])
         for j, out_channels in enumerate(channels_per_stage):
             x = alex_conv(
                 x=x,
@@ -175,13 +184,16 @@ def alexnet_model(channels,
                 kernel_size=kernel_sizes[i][j],
                 strides=strides[i][j],
                 padding=paddings[i][j],
+                use_lrn=use_lrn_i,
                 name="features/stage{}/unit{}".format(i + 1, j + 1))
             in_channels = out_channels
-        x = nn.MaxPool2D(
+        x = maxpool2d(
+            x=x,
             pool_size=3,
             strides=2,
-            padding='valid',
-            name="features/stage{}/pool".format(i + 1))(x)
+            padding=0,
+            ceil_mode=True,
+            name="features/stage{}/pool".format(i + 1))
 
     x = flatten(x, reshape=True)
     x = alex_output_block(
@@ -196,7 +208,8 @@ def alexnet_model(channels,
     return model
 
 
-def get_alexnet(model_name=None,
+def get_alexnet(version="a",
+                model_name=None,
                 pretrained=False,
                 root=os.path.join("~", ".keras", "models"),
                 **kwargs):
@@ -205,6 +218,8 @@ def get_alexnet(model_name=None,
 
     Parameters:
     ----------
+    version : str, default 'a'
+        Version of AlexNet ('a' or 'b').
     model_name : str or None, default None
         Model name for loading pretrained model.
     pretrained : bool, default False
@@ -212,16 +227,27 @@ def get_alexnet(model_name=None,
     root : str, default '~/.keras/models'
         Location for keeping the model parameters.
     """
-    channels = [[64], [192], [384, 256, 256]]
-    kernel_sizes = [[11], [5], [3, 3, 3]]
-    strides = [[4], [1], [1, 1, 1]]
-    paddings = [[2], [2], [1, 1, 1]]
+    if version == "a":
+        channels = [[96], [256], [384, 384, 256]]
+        kernel_sizes = [[11], [5], [3, 3, 3]]
+        strides = [[4], [1], [1, 1, 1]]
+        paddings = [[0], [2], [1, 1, 1]]
+        use_lrn = True
+    elif version == "b":
+        channels = [[64], [192], [384, 256, 256]]
+        kernel_sizes = [[11], [5], [3, 3, 3]]
+        strides = [[4], [1], [1, 1, 1]]
+        paddings = [[2], [2], [1, 1, 1]]
+        use_lrn = False
+    else:
+        raise ValueError("Unsupported AlexNet version {}".format(version))
 
     net = alexnet_model(
         channels=channels,
         kernel_sizes=kernel_sizes,
         strides=strides,
         paddings=paddings,
+        use_lrn=use_lrn,
         **kwargs)
 
     if pretrained:
@@ -251,6 +277,21 @@ def alexnet(**kwargs):
     return get_alexnet(model_name="alexnet", **kwargs)
 
 
+def alexnetb(**kwargs):
+    """
+    AlexNet-b model from 'One weird trick for parallelizing convolutional neural networks,'
+    https://arxiv.org/abs/1404.5997. Non-standard version.
+
+    Parameters:
+    ----------
+    pretrained : bool, default False
+        Whether to load the pretrained weights for model.
+    root : str, default '~/.keras/models'
+        Location for keeping the model parameters.
+    """
+    return get_alexnet(version="b", model_name="alexnetb", **kwargs)
+
+
 def _test():
     import numpy as np
     import keras
@@ -259,6 +300,7 @@ def _test():
 
     models = [
         alexnet,
+        alexnetb,
     ]
 
     for model in models:
@@ -267,7 +309,8 @@ def _test():
         # net.summary()
         weight_count = keras.utils.layer_utils.count_params(net.trainable_weights)
         print("m={}, {}".format(model.__name__, weight_count))
-        assert (model != alexnet or weight_count == 61100840)
+        assert (model != alexnet or weight_count == 62378344)
+        assert (model != alexnetb or weight_count == 61100840)
 
         if is_channels_first():
             x = np.zeros((1, 3, 224, 224), np.float32)

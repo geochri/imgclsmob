@@ -1,7 +1,12 @@
+"""
+    Script for evaluating trained model on MXNet/Gluon (validate/test).
+"""
+
 import os
 import time
 import logging
 import argparse
+from sys import version_info
 from common.logger_utils import initialize_logging
 from gluon.utils import prepare_mx_context, prepare_model
 from gluon.utils import calc_net_weight_count, validate
@@ -11,9 +16,18 @@ from gluon.dataset_utils import get_dataset_metainfo
 from gluon.dataset_utils import get_batch_fn
 from gluon.dataset_utils import get_val_data_source, get_test_data_source
 from gluon.model_stats import measure_model
+from gluon.gluoncv2.models.model_store import _model_sha1
 
 
 def add_eval_parser_arguments(parser):
+    """
+    Create python script parameters (for eval specific subpart).
+
+    Parameters:
+    ----------
+    parser : ArgumentParser
+        ArgumentParser instance.
+    """
     parser.add_argument(
         "--model",
         type=str,
@@ -87,7 +101,7 @@ def add_eval_parser_arguments(parser):
     parser.add_argument(
         "--log-pip-packages",
         type=str,
-        default="mxnet-cu100",
+        default="mxnet-cu101",
         help="list of pip packages for logging")
 
     parser.add_argument(
@@ -95,12 +109,24 @@ def add_eval_parser_arguments(parser):
         action="store_true",
         help="disable cudnn autotune for segmentation models")
     parser.add_argument(
-        "--show-progress",
+        "--not-show-progress",
         action="store_true",
-        help="show progress bar")
+        help="do not show progress bar")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="test all pretrained models for partucular dataset")
 
 
 def parse_args():
+    """
+    Create python script parameters (common part).
+
+    Returns
+    -------
+    ArgumentParser
+        Resulted args.
+    """
     parser = argparse.ArgumentParser(
         description="Evaluate a model for image classification/segmentation (Gluon)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -128,19 +154,56 @@ def parse_args():
     return args
 
 
-def test(net,
-         test_data,
-         batch_fn,
-         data_source_needs_reset,
-         metric,
-         dtype,
-         ctx,
-         input_image_size,
-         in_channels,
-         calc_weight_count=False,
-         calc_flops=False,
-         calc_flops_only=True,
-         extended_log=False):
+def calc_model_accuracy(net,
+                        test_data,
+                        batch_fn,
+                        data_source_needs_reset,
+                        metric,
+                        dtype,
+                        ctx,
+                        input_image_size,
+                        in_channels,
+                        calc_weight_count=False,
+                        calc_flops=False,
+                        calc_flops_only=True,
+                        extended_log=False):
+    """
+    Main test routine.
+
+    Parameters:
+    ----------
+    net : HybridBlock
+        Model.
+    test_data : DataLoader or ImageRecordIter
+        Data loader or ImRec-iterator.
+    batch_fn : func
+        Function for splitting data after extraction from data loader.
+    data_source_needs_reset : bool
+        Whether to reset data (if test_data is ImageRecordIter).
+    metric : EvalMetric
+        Metric object instance.
+    dtype : str
+        Base data type for tensors.
+    ctx : Context
+        MXNet context.
+    input_image_size : tuple of 2 ints
+        Spatial size of the expected input image.
+    in_channels : int
+        Number of input channels.
+    calc_weight_count : bool, default False
+        Whether to calculate count of weights.
+    calc_flops : bool, default False
+        Whether to calculate FLOPs.
+    calc_flops_only : bool, default True
+        Whether to only calculate FLOPs without testing.
+    extended_log : bool, default False
+        Whether to log more precise accuracy values.
+
+    Returns
+    -------
+    list of floats
+        Accuracy values.
+    """
     if not calc_flops_only:
         tic = time.time()
         validate(
@@ -157,6 +220,10 @@ def test(net,
         logging.info("Test: {}".format(accuracy_msg))
         logging.info("Time cost: {:.4f} sec".format(
             time.time() - tic))
+        acc_values = metric.get()[1]
+        acc_values = acc_values if type(acc_values) == list else [acc_values]
+    else:
+        acc_values = []
 
     if calc_weight_count:
         weight_count = calc_net_weight_count(net)
@@ -173,23 +240,26 @@ def test(net,
             flops2=num_flops / 2, flops2_m=num_flops / 2 / 1e6,
             macs=num_macs, macs_m=num_macs / 1e6))
 
+    return acc_values
 
-def main():
-    args = parse_args()
 
-    if args.disable_cudnn_autotune:
-        os.environ["MXNET_CUDNN_AUTOTUNE_DEFAULT"] = "0"
+def test_model(args):
+    """
+    Main test routine.
 
-    _, log_file_exist = initialize_logging(
-        logging_dir_path=args.save_dir,
-        logging_file_name=args.logging_file_name,
-        script_args=args,
-        log_packages=args.log_packages,
-        log_pip_packages=args.log_pip_packages)
+    Parameters:
+    ----------
+    args : ArgumentParser
+        Main script arguments.
 
+    Returns
+    -------
+    float
+        Main accuracy value.
+    """
     ds_metainfo = get_dataset_metainfo(dataset_name=args.dataset)
     ds_metainfo.update(args=args)
-    assert (ds_metainfo.ml_type != "imgseg") or (args.batch_size == 1)
+    assert (ds_metainfo.ml_type != "imgseg") or (args.data_subset != "test") or (args.batch_size == 1)
     assert (ds_metainfo.ml_type != "imgseg") or args.disable_cudnn_autotune
 
     ctx, batch_size = prepare_mx_context(
@@ -201,37 +271,36 @@ def main():
         use_pretrained=args.use_pretrained,
         pretrained_model_file_path=args.resume.strip(),
         dtype=args.dtype,
-        net_extra_kwargs=ds_metainfo.net_extra_kwargs,
+        net_extra_kwargs=ds_metainfo.test_net_extra_kwargs,
         load_ignore_extra=ds_metainfo.load_ignore_extra,
-        classes=args.num_classes,
+        classes=(args.num_classes if ds_metainfo.ml_type != "hpe" else None),
         in_channels=args.in_channels,
         do_hybridize=(ds_metainfo.allow_hybridize and (not args.calc_flops)),
         ctx=ctx)
     assert (hasattr(net, "in_size"))
     input_image_size = net.in_size
 
-    if args.data_subset == "val":
-        get_test_data_source_class = get_val_data_source
-        test_metric = get_composite_metric(
-            metric_names=ds_metainfo.val_metric_names,
-            metric_extra_kwargs=ds_metainfo.val_metric_extra_kwargs)
-    else:
-        get_test_data_source_class = get_test_data_source
-        test_metric = get_composite_metric(
-            metric_names=ds_metainfo.test_metric_names,
-            metric_extra_kwargs=ds_metainfo.test_metric_extra_kwargs)
+    get_test_data_source_class = get_val_data_source if args.data_subset == "val" else get_test_data_source
     test_data = get_test_data_source_class(
         ds_metainfo=ds_metainfo,
         batch_size=args.batch_size,
         num_workers=args.num_workers)
-    batch_fn = get_batch_fn(use_imgrec=ds_metainfo.use_imgrec)
+    batch_fn = get_batch_fn(ds_metainfo=ds_metainfo)
+    if args.data_subset == "val":
+        test_metric = get_composite_metric(
+            metric_names=ds_metainfo.val_metric_names,
+            metric_extra_kwargs=ds_metainfo.val_metric_extra_kwargs)
+    else:
+        test_metric = get_composite_metric(
+            metric_names=ds_metainfo.test_metric_names,
+            metric_extra_kwargs=ds_metainfo.test_metric_extra_kwargs)
 
-    if args.show_progress:
+    if not args.not_show_progress:
         from tqdm import tqdm
         test_data = tqdm(test_data)
 
     assert (args.use_pretrained or args.resume.strip() or args.calc_flops_only)
-    test(
+    acc_values = calc_model_accuracy(
         net=net,
         test_data=test_data,
         batch_fn=batch_fn,
@@ -246,6 +315,39 @@ def main():
         calc_flops=args.calc_flops,
         calc_flops_only=args.calc_flops_only,
         extended_log=True)
+    return acc_values[ds_metainfo.saver_acc_ind] if len(acc_values) > 0 else None
+
+
+def main():
+    """
+    Main body of script.
+    """
+    args = parse_args()
+
+    if args.disable_cudnn_autotune:
+        os.environ["MXNET_CUDNN_AUTOTUNE_DEFAULT"] = "0"
+
+    _, log_file_exist = initialize_logging(
+        logging_dir_path=args.save_dir,
+        logging_file_name=args.logging_file_name,
+        script_args=args,
+        log_packages=args.log_packages,
+        log_pip_packages=args.log_pip_packages)
+
+    if args.all:
+        args.use_pretrained = True
+        for model_name, model_metainfo in (_model_sha1.items() if version_info[0] >= 3 else _model_sha1.iteritems()):
+            error, checksum, repo_release_tag = model_metainfo
+            args.model = model_name
+            logging.info("==============")
+            logging.info("Checking model: {}".format(model_name))
+            acc_value = test_model(args=args)
+            if acc_value is not None:
+                exp_value = int(error) * 1e-4
+                if abs(acc_value - exp_value) > 2e-4:
+                    logging.info("----> Wrong value detected (expected value: {})!".format(exp_value))
+    else:
+        test_model(args=args)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,8 @@ class DatasetMetaInfo(object):
         self.saver_acc_ind = None
         self.ml_type = None
         self.allow_hybridize = True
-        self.net_extra_kwargs = None
+        self.train_net_extra_kwargs = None
+        self.test_net_extra_kwargs = None
         self.load_ignore_extra = False
 
     def add_dataset_parser_arguments(self,
@@ -55,3 +56,15 @@ class DatasetMetaInfo(object):
         self.root_dir_path = args.data_dir
         self.num_classes = args.num_classes
         self.in_channels = args.in_channels
+
+    def update_from_dataset(self,
+                            dataset):
+        """
+        Update dataset metainfo after a dataset class instance creation.
+
+        Parameters:
+        ----------
+        args : obj
+            A dataset class instance.
+        """
+        pass

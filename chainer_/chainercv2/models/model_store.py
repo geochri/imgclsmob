@@ -10,20 +10,23 @@ import logging
 import hashlib
 
 _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checksum, repo_release_tag in [
-    ('alexnet', '2132', 'cea565f1d8254d6dc3fdbc87568e90c34455a477', 'v0.0.108'),
-    ('vgg11', '1179', '3cc057e61154ddbd152e138c31327ebd986d2b2f', 'v0.0.109'),
-    ('vgg13', '1116', 'e835ca5af6ad9b9d65ffa4f19ccc544907ee4e13', 'v0.0.109'),
-    ('vgg16', '0870', '8741ff5c98cd3e17bdc00a557b010c849e923b3c', 'v0.0.109'),
-    ('vgg19', '0823', '18980884d7b7e46d0f564548e09af8ea8313789d', 'v0.0.109'),
+    ('alexnet', '1770', '409d189a70b3ca3d2ed25268eb58b37210901719', 'v0.0.394'),
+    ('alexnetb', '1858', 'fc907758039a5849093b7d91f22d3ab4e5a80db6', 'v0.0.384'),
+    ('zfnet', '1675', '0205a9ab48a3d46407dd6263b1e5e003668ba3e0', 'v0.0.395'),
+    ('zfnetb', '1456', '5808c73ebdc868de4da958a3b9b29f9646ecbfbb', 'v0.0.400'),
+    ('vgg11', '1017', '7934dcf08eb44f0ebdb0a654733aba0c68e079cd', 'v0.0.381'),
+    ('vgg13', '0952', 'f6af5a265c59e6ba07062bd917ef149077019338', 'v0.0.388'),
+    ('vgg16', '0833', '5e08a9eccf74f0e89001f2bbccfc3aa2cd4b370f', 'v0.0.401'),
+    ('vgg19', '0766', 'abf329094b917c8c73d3a584f3fd3a76eec4f8c3', 'v0.0.420'),
     ('bn_vgg11', '0937', '8fcdb341a39dd2b45c17d2db5304c61dc1b9227c', 'v0.0.339'),
     ('bn_vgg13', '0887', '1709fd1a05ff302100434574b8c10f9788c06f48', 'v0.0.353'),
     ('bn_vgg16', '0759', '8d6a2a82be26b8126cd8e5ead52c6ba0f2c3bdca', 'v0.0.359'),
     ('bn_vgg19', '0688', '5b6f413cb019374591a6f6597e4ced2ae81fb924', 'v0.0.360'),
-    ('bn_vgg11b', '1060', '8964402b8870b2b2463b01e9ba9425737678c258', 'v0.0.110'),
+    ('bn_vgg11b', '0978', '54b2345ee8b3251a1d9eba3f4b3c7e8b33d0b0ab', 'v0.0.407'),
     ('bn_vgg13b', '1019', '0121b0a47782b5b58c02baa148c88cdc848fc642', 'v0.0.110'),
     ('bn_vgg16b', '0863', 'cbaa2105e000ae844b4775390e9be3b30a23e02e', 'v0.0.110'),
     ('bn_vgg19b', '0816', 'dc5e37a5f6a1d5068b18011ad779062d7b4842cd', 'v0.0.110'),
-    ('bninception', '0778', '99f685c2a38743e719eb0ed2ac99ee93f8898926', 'v0.0.139'),
+    ('bninception', '0752', '44a9e12ccd43a521ea09b021214f2951725d0826', 'v0.0.405'),
     ('resnet10', '1389', '66bddf8086630a36f64445dd8fefd895bd9e7189', 'v0.0.248'),
     ('resnet12', '1302', '0cc61e0d7f45d0a58a649850f44fcd0b913ada2a', 'v0.0.253'),
     ('resnet14', '1225', 'b0d4ee074498033f2e0daece5fa4e670f3524bcb', 'v0.0.256'),
@@ -42,7 +45,7 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('resnet101', '0601', 'd8cddbea530e052e726d5a1007985beb10ec36eb', 'v0.0.22'),
     ('resnet101b', '0514', '077eb1e282d5ece78d68bb329874b80b8f052e23', 'v0.0.357'),
     ('resnet152', '0535', '64c1daa7752bf9ba8dba6e4e0e4a7947b8c235d9', 'v0.0.144'),
-    ('resnet152b', '0527', '6efec2512832ccc6ebb63c8a41ab576b91eca737', 'v0.0.143'),
+    ('resnet152b', '0483', 'e40bb2226fae35d76342ed943a18c8ff95c4a896', 'v0.0.378'),
     ('preresnet10', '1402', '94e8fc28c7129095273a9e17f6f8d7cc7f88aefc', 'v0.0.249'),
     ('preresnet12', '1318', 'fea1c8c51c1084ff1573abbaea7df6e3aee6a7ee', 'v0.0.257'),
     ('preresnet14', '1224', 'f9973f4f030c379c691ae52d9fe9795595e8e7c6', 'v0.0.260'),
@@ -61,20 +64,35 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('preresnet101', '0575', 'f6f6789a895f681be08db6cb9ef184d9009a2f4b', 'v0.0.23'),
     ('preresnet101b', '0538', 'b502bf25880a9579cd22ab89341a6effcf5d48af', 'v0.0.351'),
     ('preresnet152', '0530', '021d99dc3004530a3a1f591e88807ce84e025033', 'v0.0.23'),
-    ('preresnet152b', '0566', 'fdd337e701c06a928e0706ad98fa722508a4dabe', 'v0.0.23'),
+    ('preresnet152b', '0500', 'bf54acd9e60bb44be621723bf0c069e2fa6c5d28', 'v0.0.386'),
     ('preresnet200b', '0560', 'f79bd952c08555e0d7bfbcfb2c8214da9c69a0c2', 'v0.0.45'),
     ('preresnet269b', '0558', 'e2e491e1b920d8a063399642a12f7d3e3a695dfb', 'v0.0.239'),
+    ('resnext14_16x4d', '1226', '80d9a3310326debcf4f9669842fd03c56d88d504', 'v0.0.370'),
+    ('resnext14_32x2d', '1249', '892f96a44bdd01e12eca47d478f3b8c0b3784555', 'v0.0.371'),
     ('resnext14_32x4d', '1115', 'fa0e7f7fd7d4a60a2876bb3c303dd1ee9fea264c', 'v0.0.327'),
+    ('resnext26_32x2d', '0849', '58d86996a5e83efe1f49513b7ef5e7803f4830b6', 'v0.0.373'),
     ('resnext26_32x4d', '0719', '62ca50907121ceee5aada95eda7398dca69928cb', 'v0.0.332'),
-    ('resnext101_32x4d', '0569', 'c6d1c30dcca4e83c48a2b77cfd36739a0192e244', 'v0.0.26'),
-    ('resnext101_64x4d', '0543', 'dd8b7d963c2415ee1207f3705fbc33cb4ba46427', 'v0.0.26'),
+    ('resnext50_32x4d', '0547', '67c67ff37c803fab2e2fa66b9cfb8518ac717d85', 'v0.0.417'),
+    ('resnext101_32x4d', '0496', '465b1bb114b0b126c96d882b4f50e0659285286f', 'v0.0.417'),
+    ('resnext101_64x4d', '0485', 'b3c1a22070960a72dc9e46588fc27b57b1ff98e0', 'v0.0.417'),
     ('seresnet10', '1332', '7943747629e79d58ff4a12b40019de07357a923e', 'v0.0.354'),
     ('seresnet18', '0923', 'b0931abe71a56c02e9c1012d34b99e469602eacc', 'v0.0.355'),
-    ('seresnet50', '0641', 'f3d68cfc8423b786c53390313cabfe0c4410f2d7', 'v0.0.24'),
+    ('seresnet26', '0806', '00032d5b07f7f580d6b39f433dec3133940d9418', 'v0.0.363'),
+    ('seresnetbc26b', '0684', '884c0e6bfaa08ac9250e90716e61e0e491f27648', 'v0.0.366'),
+    ('seresnetbc38b', '0579', '7f103cd01544f11e9cd18e9cfefb56b00d215901', 'v0.0.374'),
+    ('seresnet50', '0559', '6c5585d5e6e3fccd3ff742f081175fa0f4c2bf9f', 'v0.0.441'),
+    ('seresnet50b', '0530', '1ac3bf504713faa817e7cf1c5e8e37fb4368a883', 'v0.0.387'),
     ('seresnet101', '0588', 'e45a9f8f09f1a7439e66032a0d79d7d5a20783b6', 'v0.0.24'),
+    ('seresnet101b', '0463', '97cc55c354860719b9c206d6808e2ebd7a019bf9', 'v0.0.460'),
     ('seresnet152', '0577', 'a089ba52930e9949313b9fba00a1b2e6e68f6ea4', 'v0.0.24'),
-    ('seresnext50_32x4d', '0558', '5c435c1b730a0cea61b9657c8796f3c6b95ce9e8', 'v0.0.27'),
-    ('seresnext101_32x4d', '0501', '98ea6fc4d36e742a01a0256707a5fa118be166dd', 'v0.0.27'),
+    ('sepreresnet10', '1311', '5e38607cfb4971dbd01d6b98058975bbeb6ff61a', 'v0.0.377'),
+    ('sepreresnet18', '0939', 'a78ded77bd89ce527d606ebaffb75f0cd2258b2e', 'v0.0.380'),
+    ('sepreresnetbc26b', '0638', 'e8393574e457106c4963f7979d91b67dc7554239', 'v0.0.399'),
+    ('sepreresnetbc38b', '0566', '4b9ce0969cc05e5a710fed7073132ad025789091', 'v0.0.409'),
+    ('sepreresnet50b', '0531', 'fde03b262da6696c27d1de9188b0d4f35854b92b', 'v0.0.461'),
+    ('seresnext50_32x4d', '0507', '4ab2d4d929acbe5b7d6c3d88de3a48bfeff0f74f', 'v0.0.418'),
+    ('seresnext101_32x4d', '0459', 'df43a39efbfe351fbb4a605ef7ab2b76ed86b76b', 'v0.0.418'),
+    ('seresnext101_64x4d', '0468', 'ae28d0b429fd96c3a102c499ed37b4cac0d0206d', 'v0.0.418'),
     ('senet16', '0807', 'f45aa3fffb8ea5148c53d031e50a3f93ab00ede0', 'v0.0.341'),
     ('senet28', '0591', '7e7bf250ab1bb4842f6dd32ceb93967a7c02239b', 'v0.0.356'),
     ('senet154', '0463', '381d2494a2ad725f62325188f94cd91c795c9902', 'v0.0.28'),
@@ -87,9 +105,9 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('diracnet18v2', '1113', 'b85b43d13697dfbddbea6e46dea4766359fff7e5', 'v0.0.111'),
     ('diracnet34v2', '0948', '0245163a5c947bd6e07a743f17e6ca92c79c84da', 'v0.0.111'),
     ('densenet121', '0683', '4caa2458d39ef6dc467ef3d1a2921ce214b9ddda', 'v0.0.314'),
-    ('densenet161', '0620', '6d05f3b9991bc570cb35fff22410d2065b667835', 'v0.0.29'),
-    ('densenet169', '0686', '1978656b46c2b7de94c1e12350c74f492d683f7e', 'v0.0.29'),
-    ('densenet201', '0629', '7770293931c03c2852115267dde3100d7140bbba', 'v0.0.29'),
+    ('densenet161', '0590', 'a514f930224961341c65890cb1039b02076426b8', 'v0.0.432'),
+    ('densenet169', '0609', '99c9bddf1ae3472efad2b4775fd91b540078e1d3', 'v0.0.406'),
+    ('densenet201', '0590', 'f50cfbb1d3cf084d107cff5d165dd5c7fc72b6b9', 'v0.0.426'),
     ('condensenet74_c4_g4', '0861', 'ef6077ec5348504346b3bcbaacbc308f825a9f87', 'v0.0.36'),
     ('condensenet74_c8_g8', '1043', '277fbfb898e0c8c7de8475184bcf5e651da10acc', 'v0.0.36'),
     ('peleenet', '1127', 'ef057fc99fda7df002d9654f0a74452e4b4b75d0', 'v0.0.141'),
@@ -127,6 +145,24 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('espnetv2_w5d4', '1268', 'dc69f420f422154ab7242bcd95488541491d4982', 'v0.0.238'),
     ('espnetv2_w3d2', '1192', '2b7fc5cfacc15a63ec60109bb1b8c48d09df2a7e', 'v0.0.238'),
     ('espnetv2_w2', '0990', 'bfb3ab7c84239ff53003865e456c2a0178c48f12', 'v0.0.238'),
+    ('hrnet_w18_small_v1', '0974', '591a9e49440455c316e105b7b4448bc652c47645', 'v0.0.421'),
+    ('hrnet_w18_small_v2', '0802', '17518355ff6e52d227a8680e743e5fc5d842aab4', 'v0.0.421'),
+    ('hrnetv2_w18', '0685', 'fc8863112c525a92bf8960795e25261f7045d55d', 'v0.0.421'),
+    ('hrnetv2_w30', '0607', 'f685319f78ea409cadd98e2b43600f6bee40cbbb', 'v0.0.421'),
+    ('hrnetv2_w32', '0607', '0b9c71a6535054ef4f9f3b4c4e1b7592400f1e70', 'v0.0.421'),
+    ('hrnetv2_w40', '0573', '340d594a4f83a8e0f129b857512eba2f99d0208d', 'v0.0.421'),
+    ('hrnetv2_w44', '0593', '8426d89ac900c33640a57b301f4c47db4c9a782a', 'v0.0.421'),
+    ('hrnetv2_w48', '0581', 'd8e905a215a3bfe8edc1319f6ed5b9537bc8cdb4', 'v0.0.421'),
+    ('hrnetv2_w64', '0553', '4d8859eec42a458d22164816109cf5b831d7ba38', 'v0.0.421'),
+    ('vovnet39', '0695', '72dd2e746f0da28712a2e45d96879b24cc2300cc', 'v0.0.431'),
+    ('vovnet57', '0662', 'aa34e6d03dba3d5b2e4cc3b3c9ac019adaa5da9b', 'v0.0.431'),
+    ('selecsls42b', '0674', '6d6241e1d6f0c272f3fb1797cc4a6afa71346273', 'v0.0.430'),
+    ('selecsls60', '0628', '72a7265e3f631e8a0a641be2316dbb4a7dcdae7d', 'v0.0.430'),
+    ('selecsls60b', '0601', '12266671dc30168eb2e4643c46d45a8fda3d0c21', 'v0.0.430'),
+    ('hardnet39ds', '1004', '44e9f5e3467eca397755bd069485329844d340a1', 'v0.0.435'),
+    ('hardnet68ds', '0848', 'be0167f3dfb0c9f692af737567669dc6359dfee0', 'v0.0.435'),
+    ('hardnet68', '0738', 'df5e6284fbce071b82b0918db73bbcc208c62812', 'v0.0.435'),
+    ('hardnet85', '0644', '8fdfe8fbd59b0884b753f0939a133163a196de09', 'v0.0.435'),
     ('squeezenet_v1_0', '1738', '4c55a6a5c7ae14b88a7989eea5a7dc60960120ef', 'v0.0.128'),
     ('squeezenet_v1_1', '1740', 'b236c2047fe1d9b283ccfaabb763143a214ecc33', 'v0.0.88'),
     ('squeezeresnet_v1_0', '1766', '6dc69dc26e83beaa98fa77ee64d208294f7850f9', 'v0.0.178'),
@@ -176,16 +212,23 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('mobilenetv2_wd2', '1444', 'ca0906e176f15855aa8c8d771c841c3f9cd3d454', 'v0.0.170'),
     ('mobilenetv2_w3d4', '1047', 'a25fd26c426b5af8c5761b9d634b508622f019cf', 'v0.0.230'),
     ('mobilenetv2_w1', '0866', 'efc3331e08dfc578526bbf5e161c15e50b146c63', 'v0.0.213'),
+    ('mobilenetv2b_wd4', '2510', '07aff071c7e7104b6bbb32f9b22ecae1410594b5', 'v0.0.453'),
+    ('mobilenetv2b_wd2', '1471', '0f1e37d8859ef863852d9757988b4cb6c5a98182', 'v0.0.453'),
+    ('mobilenetv2b_w3d4', '1152', 'a030029ae41b76f8412c0e057430e4804ff60e2f', 'v0.0.453'),
+    ('mobilenetv2b_w1', '0947', 'e6fb591c8ce85190e4ad7c1c0671ad4b7733fb8a', 'v0.0.453'),
+    ('mobilenetv3_large_w1', '0771', 'b78635d1203847115abdcf476cc8bd91d6e4aa7e', 'v0.0.411'),
     ('igcv3_wd4', '2828', '25942192926a7dcdd0c57238336a8a0ef840e079', 'v0.0.142'),
     ('igcv3_wd2', '1704', '86246558ade35232344a4c448288ae3927143f9c', 'v0.0.132'),
     ('igcv3_w3d4', '1099', 'b0dbc54a5c40c7bd55ebd3cab05e39263064f4ec', 'v0.0.207'),
     ('igcv3_w1', '0898', '5fd85acd8a4ed75845e2ef770c25460c5f7eff95', 'v0.0.243'),
-    ('mnasnet', '1144', '688e523d02834b34f4a693a1b18e7a523483eb58', 'v0.0.117'),
+    ('mnasnet_b1', '0802', '71442f8b2f9dc10fa0f1c8525da56b164b76b749', 'v0.0.419'),
+    ('mnasnet_a1', '0757', 'f6e274b3463df4106850611904ce20ebe5e0c0cf', 'v0.0.419'),
     ('darts', '0897', '8986fe64b3f853704a88010f0a735a9e6e33bd97', 'v0.0.118'),
     ('proxylessnas_cpu', '0752', '22bd211b1fbf219f1cb28ed7a407e3949a2037ea', 'v0.0.324'),
     ('proxylessnas_gpu', '0723', 'b81256a146f7e0c08a5d5004332bb409576799f3', 'v0.0.333'),
     ('proxylessnas_mobile', '0785', '561f3416638764215dcd975b2f7e27fc34974929', 'v0.0.326'),
     ('proxylessnas_mobile14', '0651', '7467ce2d73d14facfc593c395fe73a6f2d7dc456', 'v0.0.331'),
+    ('fbnet_cb', '0784', 'ef40d7858dbfe46a8390829c364528549b4aa870', 'v0.0.415'),
     ('xception', '0547', '7a5be9582fd7a4771ede5290645be394d66d29ca', 'v0.0.115'),
     ('inceptionv3', '0561', '4ddea4df44f132ffc9e2b22b1e7d686f8b59703b', 'v0.0.92'),
     ('inceptionv4', '0526', '02e53701d1bda64b057b41fa90d8e04a17d07f66', 'v0.0.105'),
@@ -194,10 +237,35 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('nasnet_4a1056', '0796', 'f09950c0f4a333007dc33049531534b8cd9f8521', 'v0.0.97'),
     ('nasnet_6a4032', '0422', 'd49d46631abda0ec7ac4a0076e6f8d05bf99b7d1', 'v0.0.101'),
     ('pnasnet5large', '0426', '3c2755dce80a29dea19b398dce514a640da2aaa3', 'v0.0.114'),
-    ('efficientnet_b0b', '0695', '37514b9092e6c1a65338ceeedd99c237c6057b88', 'v0.0.349'),
-    ('efficientnet_b1b', '0585', '8ffa87ddd58a4b38ab594f0b045f168d14ce4eb8', 'v0.0.349'),
-    ('efficientnet_b2b', '0535', '660b8a0abfcebc3da499d07af1a7b8a90f5ec09c', 'v0.0.349'),
-    ('efficientnet_b3b', '0484', '3d4254d180c4201264d2d947a11f771862673be0', 'v0.0.349'),
+    ('spnasnet', '0869', '064ffaa7c8062fe1cf7b01bc365d406d4f780ef8', 'v0.0.416'),
+    ('efficientnet_b0', '0725', '8d6f17447e9fa2da26963b72cf8fd359aebba504', 'v0.0.364'),
+    ('efficientnet_b1', '0633', '4ac377d926a55be53052c42f21678c26862a81eb', 'v0.0.376'),
+    ('efficientnet_b0b', '0669', '366e9c540a59d954fdfd13b46f47b91231aa8700', 'v0.0.403'),
+    ('efficientnet_b1b', '0567', '2826a68613cbecc782819f24ddd5b031bfed1586', 'v0.0.403'),
+    ('efficientnet_b2b', '0514', '93c91747fda8ea4f20d6eacb678ba13bacb455bc', 'v0.0.403'),
+    ('efficientnet_b3b', '0436', '82eb9d9104377ec90cfecc8e8f04a9876d3c16f9', 'v0.0.403'),
+    ('efficientnet_b4b', '0392', '81138451fda7683c964ea52a9f2a7ea48622ef33', 'v0.0.403'),
+    ('efficientnet_b5b', '0339', 'fb684f5dc219d9463acb5aa42b48bd920f887cd1', 'v0.0.403'),
+    ('efficientnet_b6b', '0324', 'acaad4db1bb064f088d53b620ee682ecc328c80d', 'v0.0.403'),
+    ('efficientnet_b7b', '0323', '031b7bd5e4c361f734eb40bba1e10a11df0a8374', 'v0.0.403'),
+    ('efficientnet_b0c', '0644', 'e95e873de2fa5ef2fedaff2264fdd3f276a24818', 'v0.0.433'),
+    ('efficientnet_b1c', '0557', '07796241b5ef171966c1be23d911c5604936f385', 'v0.0.433'),
+    ('efficientnet_b2c', '0496', '5a0d33334fedd1b327cec38e78b2c6d6f410051d', 'v0.0.433'),
+    ('efficientnet_b3c', '0440', 'ec082c3117c91028c25e47c2df1eacff1af4673d', 'v0.0.433'),
+    ('efficientnet_b4c', '0368', 'c025d233c76831db75f7032e7b6e2450f9a4813d', 'v0.0.433'),
+    ('efficientnet_b5c', '0311', 'e01810a9209563e4d00aaab725eccc6220662cf8', 'v0.0.433'),
+    ('efficientnet_b6c', '0298', '72ac53f6de551166cb900b38a31582be7b467f3f', 'v0.0.433'),
+    ('efficientnet_b7c', '0291', 'c0711f2102c5211cf4985e87bd9eec1cac2eeb62', 'v0.0.433'),
+    ('efficientnet_b8c', '0276', 'd1c7aa153428ed631730a4510333eec7329667ed', 'v0.0.433'),
+    ('efficientnet_edge_small_b', '0629', '4aac359125638568f1461072a97ed96cb5a8a34c', 'v0.0.434'),
+    ('efficientnet_edge_medium_b', '0552', 'fdf98bd58abbd135f59b8630e2beaffccdbc4832', 'v0.0.434'),
+    ('efficientnet_edge_large_b', '0489', '45f0595804415252d4496153eefd45f2ebc38fd5', 'v0.0.434'),
+    ('mixnet_s', '0728', 'dc6c60c8cfac2e7a90ae68a76ed4fda17b44cf7a', 'v0.0.412'),
+    ('mixnet_m', '0675', '4979acf0bd7ddef39f30f80ae296d480e5120609', 'v0.0.413'),
+    ('mixnet_l', '0590', 'f942b4c57f08316283841a18ae2bd8fe4a9b1b1a', 'v0.0.414'),
+    ('resneta50b', '0541', '9c56b0411616f7435b98524920bfe566589cf55a', 'v0.0.452'),
+    ('resneta101b', '0491', '5c892558fdf39f4f182ca03628825b00cc3af7f0', 'v0.0.452'),
+    ('resneta152b', '0467', 'd7e00a1b09390ceda24edbce89f8421097b6a741', 'v0.0.452'),
     ('resnetd50b', '0550', '7ba88f0436b3fa598520424bb463ac985ffb0caf', 'v0.0.296'),
     ('resnetd101b', '0460', 'b90f971e4514345fb885de95165ddcc4e6610234', 'v0.0.296'),
     ('resnetd152b', '0470', '41442334cde93c9744d2a86288d11614c848503a', 'v0.0.296'),
@@ -216,9 +284,17 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('resnet164bn_cifar10', '0368', 'd86593667f30bfef0c0ad237f2da32601b048312', 'v0.0.179'),
     ('resnet164bn_cifar100', '2044', '190ab6b485404e43c41a85542e57adb051744aa0', 'v0.0.182'),
     ('resnet164bn_svhn', '0242', 'b4c1c66ccc47f0802058fcd469844811f214bbca', 'v0.0.267'),
+    ('resnet272bn_cifar10', '0333', 'b7c6902a5e742b2c46c9454be5962f9a5e5a0fa5', 'v0.0.368'),
+    ('resnet272bn_cifar100', '2007', 'fe6b27f8b18785d568719dfbaea79ae05eb0aefe', 'v0.0.368'),
+    ('resnet272bn_svhn', '0243', '693d5c393d2823146a1bdde0f8b11bb21ccd8c12', 'v0.0.368'),
+    ('resnet542bn_cifar10', '0343', 'b6598e7a0e5bd800b4425424b43274a96677e77b', 'v0.0.369'),
+    ('resnet542bn_cifar100', '1932', '4f95b380a755ae548187bfa0da038565c50e1e26', 'v0.0.369'),
+    ('resnet542bn_svhn', '0234', '7421964d2246a7b5ba7f9baf294cc3bd06329ad8', 'v0.0.369'),
     ('resnet1001_cifar10', '0328', '0e27556cdc97b7d0612d4518546a9b0479e030c3', 'v0.0.201'),
     ('resnet1001_cifar100', '1979', '6416c8d2f86debf42f1a3798e4b53fa8d94b0347', 'v0.0.254'),
+    ('resnet1001_svhn', '0241', 'c8b23d4c50359cac2fbd837ed754cc4ea7b3b060', 'v0.0.408'),
     ('resnet1202_cifar10', '0353', 'd82bb4359d16e68989547f8b1153c8f23264e46c', 'v0.0.214'),
+    ('resnet1202_cifar100', '2156', '711136021e134b4180cc49c7bb1dda2bd0d4ab49', 'v0.0.410'),
     ('preresnet20_cifar10', '0651', '5cf94722c7969e136e2174959fee4d7b95528f54', 'v0.0.164'),
     ('preresnet20_cifar100', '3022', 'e3fd9391a621da1afd77f1c09ae0c9bdda4e17aa', 'v0.0.187'),
     ('preresnet20_svhn', '0322', '8e56898f75a9ba2c016b1e14e880305e55a96ea7', 'v0.0.269'),
@@ -231,6 +307,12 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('preresnet164bn_cifar10', '0364', 'c0ff243801f078c6e6be72e1d3b67d88d61c4454', 'v0.0.196'),
     ('preresnet164bn_cifar100', '2018', '5228dfbdebf0f4699dae38a4a9b8310b08189d48', 'v0.0.192'),
     ('preresnet164bn_svhn', '0258', '69de71f53eee796710e11dae53f10ed276588df0', 'v0.0.269'),
+    ('preresnet272bn_cifar10', '0325', '8f8f375dfca98fb0572b2de63ca3441888c52a88', 'v0.0.389'),
+    ('preresnet272bn_cifar100', '1963', '52a0ebabfa75366e249e612b9556c87618acf41e', 'v0.0.389'),
+    ('preresnet272bn_svhn', '0234', 'b2cc8842932feb8f04547d5341f00ef2a3846d8a', 'v0.0.389'),
+    ('preresnet542bn_cifar10', '0314', '86a2b5f51c4e8064ba3093472a65e52e4d65f6be', 'v0.0.391'),
+    ('preresnet542bn_cifar100', '1871', 'd7343a662a78d29fe14f98e7dba6d79096f43904', 'v0.0.391'),
+    ('preresnet542bn_svhn', '0236', '67f372d8a906e75f2aa3a32396e757851fd6e1fd', 'v0.0.391'),
     ('preresnet1001_cifar10', '0265', '1f3028bdf7143b8f99340b1b1a0a8e029d7020a0', 'v0.0.209'),
     ('preresnet1001_cifar100', '1841', 'fcbddbdb462da0d77c50026878ea2cfb6a95f5d4', 'v0.0.283'),
     ('preresnet1202_cifar10', '0339', 'cc2bd85a97842f7a444deb78262886a264a42c25', 'v0.0.246'),
@@ -240,21 +322,69 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('resnext29_16x64d_cifar10', '0241', 'e80d3cb5f8d32be2025fe8fb7a7369b2d004217e', 'v0.0.176'),
     ('resnext29_16x64d_cifar100', '1693', '762f79b3506528f817882c3a47252c2f42e9376b', 'v0.0.322'),
     ('resnext29_16x64d_svhn', '0268', '04ffa5396ae4a61e60a30f86cd5180611ce94772', 'v0.0.358'),
+    ('resnext272_1x64d_cifar10', '0255', '1ca6630049e54d9d17887c0af26ab6f848d30067', 'v0.0.372'),
+    ('resnext272_1x64d_cifar100', '1911', '9a9b397c1091c6bd5b0f4b13fb6567a99d7aa7ac', 'v0.0.372'),
+    ('resnext272_1x64d_svhn', '0235', 'b12f9d9ce073c72c2e5509a27a5dd065a7b5d05f', 'v0.0.372'),
+    ('resnext272_2x32d_cifar10', '0274', '94e492a4391e589e6722a91ddc8b18df4dc89ed0', 'v0.0.375'),
+    ('resnext272_2x32d_cifar100', '1834', 'bbc0c87cad70745f2aa86241521449ab7f9fd3bf', 'v0.0.375'),
+    ('resnext272_2x32d_svhn', '0244', 'd9432f639120985968afc9b1bdde666ceaad53c9', 'v0.0.375'),
+    ('seresnet20_cifar10', '0601', '143eba2ad59cc9f7e539d97445eb4fe13aad1a6e', 'v0.0.362'),
+    ('seresnet20_cifar100', '2854', '1240e42f79500ddca2e471f543ff1aa28f20af16', 'v0.0.362'),
+    ('seresnet20_svhn', '0323', '6c611f0a860d7a0c161602bfc268ccb8563376ee', 'v0.0.362'),
+    ('seresnet56_cifar10', '0413', '66486cdbab43e244883ca8f26aa93da2297f9468', 'v0.0.362'),
+    ('seresnet56_cifar100', '2294', 'ab7e54434bdee090f0694d3ba96122c441b7753b', 'v0.0.362'),
+    ('seresnet56_svhn', '0264', '0a017d76364bb219b35aa2a792291acb1554e251', 'v0.0.362'),
+    ('seresnet110_cifar10', '0363', '9a85ff9521387e1155437e691d5ccb411b28e441', 'v0.0.362'),
+    ('seresnet110_cifar100', '2086', '298d298ea6747ff9f9277be08838f723c239e4e3', 'v0.0.362'),
+    ('seresnet110_svhn', '0235', '525399af7c6f717aabc6c1c024c863191a1a28d9', 'v0.0.362'),
+    ('seresnet164bn_cifar10', '0339', '4c59e76fc3264532142b37db049d3ff422b6d5f4', 'v0.0.362'),
+    ('seresnet164bn_cifar100', '1995', 'cdac82fd3133bfd4d8cd261016a68fe95928ea4b', 'v0.0.362'),
+    ('seresnet164bn_svhn', '0245', '31e8d2beeeb74a444ff756cafc7f1b557009cddc', 'v0.0.362'),
+    ('seresnet272bn_cifar10', '0339', '8081d1be9a5eb985c828b6f60e41b3d689c84659', 'v0.0.390'),
+    ('seresnet272bn_cifar100', '1907', 'a83ac8d69535cfb394be7e790ff9683d65e2b3f9', 'v0.0.390'),
+    ('seresnet272bn_svhn', '0238', '2b28cd779296d2afbb789cee7b73a80b4b07e4a9', 'v0.0.390'),
+    ('seresnet542bn_cifar10', '0347', 'e67d0c059a4f5c2e97790eb50d03013430f5a2fd', 'v0.0.385'),
+    ('seresnet542bn_cifar100', '1887', 'dac530d68dff49ec37756212d3f9b52c256448fb', 'v0.0.385'),
+    ('seresnet542bn_svhn', '0226', '9571b88bd6ac07407a453651feb29b376609933c', 'v0.0.385'),
+    ('sepreresnet20_cifar10', '0618', 'cbc1c4df6061046a7cf99e5739a5c5df811da420', 'v0.0.379'),
+    ('sepreresnet20_cifar100', '2831', 'e54804186c83656f8d9705ff021fd83772a0c6eb', 'v0.0.379'),
+    ('sepreresnet20_svhn', '0324', '04dafec1e0490ecc7001a0ca9547b60ba6314956', 'v0.0.379'),
+    ('sepreresnet56_cifar10', '0451', '0b34942c73cd2d196aa01763fb5167cb78f2b56d', 'v0.0.379'),
+    ('sepreresnet56_cifar100', '2305', '1138b50001119765d50eeaf10a3fca15ccf6040a', 'v0.0.379'),
+    ('sepreresnet56_svhn', '0271', '150740af292a0c5c8a6d499dfa13b2a2c5672e60', 'v0.0.379'),
+    ('sepreresnet110_cifar10', '0454', '4c062f46d2ec615cbfc0e07af12febcddcd16364', 'v0.0.379'),
+    ('sepreresnet110_cifar100', '2261', 'b525d8b1568e1cad021026930f5b5283bdba8b49', 'v0.0.379'),
+    ('sepreresnet110_svhn', '0259', 'eec4c9f3c94cad32557f0a969a8ec1d127877ab6', 'v0.0.379'),
+    ('sepreresnet164bn_cifar10', '0373', 'e82ad7ffc78c00ad128ab4116dbd3f3eae028c19', 'v0.0.379'),
+    ('sepreresnet164bn_cifar100', '2005', 'baf00211c3da54ddf50000629b8419da8af599d8', 'v0.0.379'),
+    ('sepreresnet164bn_svhn', '0256', '36362d66943c89b7b7153eeaf0cfc2113369b6d5', 'v0.0.379'),
+    ('sepreresnet272bn_cifar10', '0339', '02e141138736d647bcbdb4f0fc0d81a7bc8bef85', 'v0.0.379'),
+    ('sepreresnet272bn_cifar100', '1913', 'd37b7af28056f42bbd11df19479cbdb0b0ac7f63', 'v0.0.379'),
+    ('sepreresnet272bn_svhn', '0249', '44b18f81ea4ba5ec6a7ea725fc9c0798a670c161', 'v0.0.379'),
+    ('sepreresnet542bn_cifar10', '0308', '1e726874123afc10d24cf58779347b13fdfa3b00', 'v0.0.382'),
+    ('sepreresnet542bn_cifar100', '1945', 'aadac5fbe15f5227ff02cdf9abf3c2f27b602db4', 'v0.0.382'),
+    ('sepreresnet542bn_svhn', '0247', 'ff5682df9a051821a4fda0a1f1fe81dbf96da479', 'v0.0.382'),
     ('pyramidnet110_a48_cifar10', '0372', '965fce37e26ef4e3724df869fe90283669fe9daf', 'v0.0.184'),
     ('pyramidnet110_a48_cifar100', '2095', 'b74f12c8d11de3ddd9fa51fe93c1903675a43a3c', 'v0.0.186'),
     ('pyramidnet110_a48_svhn', '0247', 'e750bd672b24bb60eca0527fd11f9866a9fc8329', 'v0.0.281'),
     ('pyramidnet110_a84_cifar10', '0298', '7b38a0f65de0bec2f4ceb83398fef61009a2c129', 'v0.0.185'),
     ('pyramidnet110_a84_cifar100', '1887', '842b3809619ec81c6e27defcad9df5c3dbc0ae55', 'v0.0.199'),
+    ('pyramidnet110_a84_svhn', '0243', '56b06d8fd9ec043ccf5acc0b8a129bee2ef9a901', 'v0.0.392'),
     ('pyramidnet110_a270_cifar10', '0251', 'b3456ddd5919ef861ec607f8287bd071de0ba077', 'v0.0.194'),
     ('pyramidnet110_a270_cifar100', '1710', '56ae71355de25daafe34c51b91fe5b4bdab1f6ac', 'v0.0.319'),
+    ('pyramidnet110_a270_svhn', '0238', 'fdf9f2da74bae9d4280f329554a12c9770fde52f', 'v0.0.393'),
     ('pyramidnet164_a270_bn_cifar10', '0242', '783e21b5856a46ee0087535776703eb7ca0c24ae', 'v0.0.264'),
     ('pyramidnet164_a270_bn_cifar100', '1670', '7614c56c52d9a6ca42d0446ab7b5c9a5e4eae63f', 'v0.0.312'),
+    ('pyramidnet164_a270_bn_svhn', '0233', '6dcd188245b4c4edc8a1c751cd54211d26e2c603', 'v0.0.396'),
     ('pyramidnet200_a240_bn_cifar10', '0244', '89ae1856e23a67aac329df11775346e6bf8e00b7', 'v0.0.268'),
     ('pyramidnet200_a240_bn_cifar100', '1609', '0729db3729da20627c7e91bd1e9beff251f2b82c', 'v0.0.317'),
+    ('pyramidnet200_a240_bn_svhn', '0232', 'b5876d02190e3e6a7dc7c0cd6e931e96151c34e9', 'v0.0.397'),
     ('pyramidnet236_a220_bn_cifar10', '0247', '6b9a29664f54d8ea82afc863670a79099e6f570a', 'v0.0.285'),
     ('pyramidnet236_a220_bn_cifar100', '1634', 'fd14728bc8ca8ccb205880d24d38740dad232d00', 'v0.0.312'),
+    ('pyramidnet236_a220_bn_svhn', '0235', 'bb39a3c6f8ee25c32a40304ebf266a9521b513c4', 'v0.0.398'),
     ('pyramidnet272_a200_bn_cifar10', '0239', '533f8d89abe57656e1baef549dabedbc4dcefbe8', 'v0.0.284'),
     ('pyramidnet272_a200_bn_cifar100', '1619', '4ba0ea07d5f519878d33f7b3741f742ae12fef50', 'v0.0.312'),
+    ('pyramidnet272_a200_bn_svhn', '0240', '2ace26878c803cc3a415d8f897bf9d3ec7f4d19c', 'v0.0.404'),
     ('densenet40_k12_cifar10', '0561', 'a37df881a11487fdde772254a82c20c3e45b461b', 'v0.0.193'),
     ('densenet40_k12_cifar100', '2490', 'd06839db7eec0331354ca31b421c6fbcd4665fd3', 'v0.0.195'),
     ('densenet40_k12_svhn', '0305', '8d563cdf9dcd1d4822669f6119f6e77b4e03c162', 'v0.0.278'),
@@ -370,6 +500,26 @@ _model_sha1 = {name: (error, checksum, repo_release_tag) for name, error, checks
     ('fcn8sd_resnetd50b_ade20k', '3339', '1d03bc38ea64551806ddfd4185b5eb49fb9e160f', 'v0.0.299'),
     ('fcn8sd_resnetd101b_ade20k', '3588', 'ff385e1913bc8c05c6abe9cb19896f477b9b75a7', 'v0.0.299'),
     ('fcn8sd_resnetd101b_coco', '6011', '4a469997cdc3e52c1dee1a2d58578f9df54c419b', 'v0.0.299'),
+    ('icnet_resnetd50b_cityscapes', '6078', '04f581dc985f3d2874e8530bb70e529302e9d3dd', 'v0.0.457'),
+    ('sinet_cityscapes', '6084', 'c0a4e992f64c042ac815b87fe8d37919a693d0ad', 'v0.0.437'),
+    ('bisenet_resnet18_celebamaskhq', '0000', 'c3bd2251b86e4fce29a3d1fb7600c6259d4d6523', 'v0.0.462'),
+    ('alphapose_fastseresnet101b_coco', '7415', 'c1aee8e0e4aaa1352d728ad5f147d77b9ebeff8d', 'v0.0.454'),
+    ('simplepose_resnet18_coco', '6631', 'e267629f3da46f502914d84c10afb52a5ea12e3b', 'v0.0.455'),
+    ('simplepose_resnet50b_coco', '7102', '78b005c871baaf5a77d7c8de41eac8ec01b7d942', 'v0.0.455'),
+    ('simplepose_resnet101b_coco', '7244', '59f85623525928ba8601eefc81c781f0a48dd72e', 'v0.0.455'),
+    ('simplepose_resnet152b_coco', '7253', '6228ce42852da4e01b85917f234bf74cc0962e8f', 'v0.0.455'),
+    ('simplepose_resneta50b_coco', '7170', 'e45c65255002eb22c2aa39ff4ee4d7d1c902467c', 'v0.0.455'),
+    ('simplepose_resneta101b_coco', '7297', '800500538da729d33bd7e141b3b7c80738b33c47', 'v0.0.455'),
+    ('simplepose_resneta152b_coco', '7344', 'ac76d0a9dd51dcbe770ce3044567bc53f21d8fc4', 'v0.0.455'),
+    ('simplepose_mobile_resnet18_coco', '6625', 'a5201083587dbc1f9e0b666285872f0ffcb23f88', 'v0.0.456'),
+    ('simplepose_mobile_resnet50b_coco', '7110', '6d17c89b71fa02db4903ac4ba08922c1c267dcf5', 'v0.0.456'),
+    ('simplepose_mobile_mobilenet_w1_coco', '6410', '14efcbbaf1be6e08448a89feb3161e572466de20', 'v0.0.456'),
+    ('simplepose_mobile_mobilenetv2b_w1_coco', '6374', '73b90839e07f59decdbc11cbffff196ed148e1d9', 'v0.0.456'),
+    ('simplepose_mobile_mobilenetv3_small_w1_coco', '5434', 'cc5169a3ac2cb3311d02bc4752abc0f799bc4492', 'v0.0.456'),
+    ('simplepose_mobile_mobilenetv3_large_w1_coco', '6367', 'b93dbd09bdb07fd33732aaf9e782148cbb394cd3', 'v0.0.456'),
+    ('lwopenpose2d_mobilenet_cmupan_coco', '3999', '0a2829dcb84ea39a401dbfb6b4635d68cc1e23ca', 'v0.0.458'),
+    ('lwopenpose3d_mobilenet_cmupan_coco', '3999', 'ef1e8e130485a5df9864db59f93ddeb892c11a46', 'v0.0.458'),
+    ('ibppose_coco', '6487', '70158be1fc226d4b3608d02273898e887edf744a', 'v0.0.459'),
 ]}
 
 imgclsmob_repo_url = 'https://github.com/osmr/imgclsmob'
@@ -377,13 +527,13 @@ imgclsmob_repo_url = 'https://github.com/osmr/imgclsmob'
 
 def get_model_name_suffix_data(model_name):
     if model_name not in _model_sha1:
-        raise ValueError('Pretrained model for {name} is not available.'.format(name=model_name))
+        raise ValueError("Pretrained model for {name} is not available.".format(name=model_name))
     error, sha1_hash, repo_release_tag = _model_sha1[model_name]
     return error, sha1_hash, repo_release_tag
 
 
 def get_model_file(model_name,
-                   local_model_store_dir_path=os.path.join('~', '.chainer', 'models')):
+                   local_model_store_dir_path=os.path.join("~", ".chainer", "models")):
     """
     Return location for the pretrained on local file system. This function will download from online model zoo when
     model cannot be found or has mismatch. The root directory will be created if it doesn't exist.
@@ -402,7 +552,7 @@ def get_model_file(model_name,
     """
     error, sha1_hash, repo_release_tag = get_model_name_suffix_data(model_name)
     short_sha1 = sha1_hash[:8]
-    file_name = '{name}-{error}-{short_sha1}.npz'.format(
+    file_name = "{name}-{error}-{short_sha1}.npz".format(
         name=model_name,
         error=error,
         short_sha1=short_sha1)
@@ -412,16 +562,16 @@ def get_model_file(model_name,
         if _check_sha1(file_path, sha1_hash):
             return file_path
         else:
-            logging.warning('Mismatch in the content of model file detected. Downloading again.')
+            logging.warning("Mismatch in the content of model file detected. Downloading again.")
     else:
-        logging.info('Model file not found. Downloading to {}.'.format(file_path))
+        logging.info("Model file not found. Downloading to {}.".format(file_path))
 
     if not os.path.exists(local_model_store_dir_path):
         os.makedirs(local_model_store_dir_path)
 
-    zip_file_path = file_path + '.zip'
+    zip_file_path = file_path + ".zip"
     _download(
-        url='{repo_url}/releases/download/{repo_release_tag}/{file_name}.zip'.format(
+        url="{repo_url}/releases/download/{repo_release_tag}/{file_name}.zip".format(
             repo_url=imgclsmob_repo_url,
             repo_release_tag=repo_release_tag,
             file_name=file_name),
@@ -434,7 +584,7 @@ def get_model_file(model_name,
     if _check_sha1(file_path, sha1_hash):
         return file_path
     else:
-        raise ValueError('Downloaded file has different hash. Please try again.')
+        raise ValueError("Downloaded file has different hash. Please try again.")
 
 
 def _download(url, path=None, overwrite=False, sha1_hash=None, retries=5, verify_ssl=True):
@@ -471,21 +621,21 @@ def _download(url, path=None, overwrite=False, sha1_hash=None, retries=5, verify
         requests = requests_failed_to_import
 
     if path is None:
-        fname = url.split('/')[-1]
+        fname = url.split("/")[-1]
         # Empty filenames are invalid
-        assert fname, 'Can\'t construct file-name from this URL. Please set the `path` option manually.'
+        assert fname, "Can't construct file-name from this URL. Please set the `path` option manually."
     else:
         path = os.path.expanduser(path)
         if os.path.isdir(path):
-            fname = os.path.join(path, url.split('/')[-1])
+            fname = os.path.join(path, url.split("/")[-1])
         else:
             fname = path
     assert retries >= 0, "Number of retries should be at least 0"
 
     if not verify_ssl:
         warnings.warn(
-            'Unverified HTTPS request is being made (verify_ssl=False). '
-            'Adding certificate verification is strongly advised.')
+            "Unverified HTTPS request is being made (verify_ssl=False). "
+            "Adding certificate verification is strongly advised.")
 
     if overwrite or not os.path.exists(fname) or (sha1_hash and not _check_sha1(fname, sha1_hash)):
         dirname = os.path.dirname(os.path.abspath(os.path.expanduser(fname)))
@@ -495,19 +645,19 @@ def _download(url, path=None, overwrite=False, sha1_hash=None, retries=5, verify
             # Disable pyling too broad Exception
             # pylint: disable=W0703
             try:
-                print('Downloading {} from {}...'.format(fname, url))
+                print("Downloading {} from {}...".format(fname, url))
                 r = requests.get(url, stream=True, verify=verify_ssl)
                 if r.status_code != 200:
                     raise RuntimeError("Failed downloading url {}".format(url))
-                with open(fname, 'wb') as f:
+                with open(fname, "wb") as f:
                     for chunk in r.iter_content(chunk_size=1024):
                         if chunk:  # filter out keep-alive new chunks
                             f.write(chunk)
                 if sha1_hash and not _check_sha1(fname, sha1_hash):
-                    raise UserWarning('File {} is downloaded but the content hash does not match.'
-                                      ' The repo may be outdated or download may be incomplete. '
-                                      'If the "repo_url" is overridden, consider switching to '
-                                      'the default repo.'.format(fname))
+                    raise UserWarning("File {} is downloaded but the content hash does not match."
+                                      " The repo may be outdated or download may be incomplete. "
+                                      "If the 'repo_url' is overridden, consider switching to "
+                                      "the default repo.".format(fname))
                 break
             except Exception as e:
                 retries -= 1
@@ -515,7 +665,7 @@ def _download(url, path=None, overwrite=False, sha1_hash=None, retries=5, verify
                     raise e
                 else:
                     print("download failed, retrying, {} attempt{} left"
-                          .format(retries, 's' if retries > 1 else ''))
+                          .format(retries, "s" if retries > 1 else ""))
 
     return fname
 
@@ -536,7 +686,7 @@ def _check_sha1(filename, sha1_hash):
         Whether the file content matches the expected hash.
     """
     sha1 = hashlib.sha1()
-    with open(filename, 'rb') as f:
+    with open(filename, "rb") as f:
         while True:
             data = f.read(1048576)
             if not data:

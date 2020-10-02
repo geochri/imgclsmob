@@ -5,91 +5,12 @@
 """
 
 __all__ = ['VGG', 'vgg11', 'vgg13', 'vgg16', 'vgg19', 'bn_vgg11', 'bn_vgg13', 'bn_vgg16', 'bn_vgg19', 'bn_vgg11b',
-           'bn_vgg13b', 'bn_vgg16b', 'bn_vgg19b', 'vgg_conv3x3']
+           'bn_vgg13b', 'bn_vgg16b', 'bn_vgg19b']
 
 import os
 import torch.nn as nn
 import torch.nn.init as init
-
-
-class VGGConv(nn.Module):
-    """
-    VGG specific convolution block.
-
-    Parameters:
-    ----------
-    in_channels : int
-        Number of input channels.
-    out_channels : int
-        Number of output channels.
-    kernel_size : int or tuple/list of 2 int
-        Convolution window size.
-    stride : int or tuple/list of 2 int
-        Strides of the convolution.
-    padding : int or tuple/list of 2 int
-        Padding value for convolution layer.
-    use_bias : bool
-        Whether the convolution layer uses a bias vector.
-    use_bn : bool
-        Whether to use BatchNorm layers.
-    """
-
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size,
-                 stride,
-                 padding,
-                 use_bias,
-                 use_bn):
-        super(VGGConv, self).__init__()
-        self.use_bn = use_bn
-
-        self.conv = nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-            bias=use_bias)
-        if self.use_bn:
-            self.bn = nn.BatchNorm2d(num_features=out_channels)
-        self.activ = nn.ReLU(inplace=True)
-
-    def forward(self, x):
-        x = self.conv(x)
-        if self.use_bn:
-            x = self.bn(x)
-        x = self.activ(x)
-        return x
-
-
-def vgg_conv3x3(in_channels,
-                out_channels,
-                use_bias,
-                use_bn):
-    """
-    3x3 version of the VGG specific convolution block.
-
-    Parameters:
-    ----------
-    in_channels : int
-        Number of input channels.
-    out_channels : int
-        Number of output channels.
-    use_bias : bool
-        Whether the convolution layer uses a bias vector.
-    use_bn : bool
-        Whether to use BatchNorm layers.
-    """
-    return VGGConv(
-        in_channels=in_channels,
-        out_channels=out_channels,
-        kernel_size=3,
-        stride=1,
-        padding=1,
-        use_bias=use_bias,
-        use_bn=use_bn)
+from .common import conv3x3_block
 
 
 class VGGDense(nn.Module):
@@ -164,7 +85,7 @@ class VGG(nn.Module):
     ----------
     channels : list of list of int
         Number of output channels for each unit.
-    use_bias : bool, default True
+    bias : bool, default True
         Whether the convolution layer uses a bias vector.
     use_bn : bool, default False
         Whether to use BatchNorm layers.
@@ -177,7 +98,7 @@ class VGG(nn.Module):
     """
     def __init__(self,
                  channels,
-                 use_bias=True,
+                 bias=True,
                  use_bn=False,
                  in_channels=3,
                  in_size=(224, 224),
@@ -190,10 +111,10 @@ class VGG(nn.Module):
         for i, channels_per_stage in enumerate(channels):
             stage = nn.Sequential()
             for j, out_channels in enumerate(channels_per_stage):
-                stage.add_module("unit{}".format(j + 1), vgg_conv3x3(
+                stage.add_module("unit{}".format(j + 1), conv3x3_block(
                     in_channels=in_channels,
                     out_channels=out_channels,
-                    use_bias=use_bias,
+                    bias=bias,
                     use_bn=use_bn))
                 in_channels = out_channels
             stage.add_module("pool{}".format(i + 1), nn.MaxPool2d(
@@ -223,7 +144,7 @@ class VGG(nn.Module):
 
 
 def get_vgg(blocks,
-            use_bias=True,
+            bias=True,
             use_bn=False,
             model_name=None,
             pretrained=False,
@@ -236,7 +157,7 @@ def get_vgg(blocks,
     ----------
     blocks : int
         Number of blocks.
-    use_bias : bool, default True
+    bias : bool, default True
         Whether the convolution layer uses a bias vector.
     use_bn : bool, default False
         Whether to use BatchNorm layers.
@@ -263,7 +184,7 @@ def get_vgg(blocks,
 
     net = VGG(
         channels=channels,
-        use_bias=use_bias,
+        bias=bias,
         use_bn=use_bn,
         **kwargs)
 
@@ -351,7 +272,7 @@ def bn_vgg11(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=11, use_bias=False, use_bn=True, model_name="bn_vgg11", **kwargs)
+    return get_vgg(blocks=11, bias=False, use_bn=True, model_name="bn_vgg11", **kwargs)
 
 
 def bn_vgg13(**kwargs):
@@ -366,7 +287,7 @@ def bn_vgg13(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=13, use_bias=False, use_bn=True, model_name="bn_vgg13", **kwargs)
+    return get_vgg(blocks=13, bias=False, use_bn=True, model_name="bn_vgg13", **kwargs)
 
 
 def bn_vgg16(**kwargs):
@@ -381,7 +302,7 @@ def bn_vgg16(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=16, use_bias=False, use_bn=True, model_name="bn_vgg16", **kwargs)
+    return get_vgg(blocks=16, bias=False, use_bn=True, model_name="bn_vgg16", **kwargs)
 
 
 def bn_vgg19(**kwargs):
@@ -396,7 +317,7 @@ def bn_vgg19(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=19, use_bias=False, use_bn=True, model_name="bn_vgg19", **kwargs)
+    return get_vgg(blocks=19, bias=False, use_bn=True, model_name="bn_vgg19", **kwargs)
 
 
 def bn_vgg11b(**kwargs):
@@ -411,7 +332,7 @@ def bn_vgg11b(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=11, use_bias=True, use_bn=True, model_name="bn_vgg11b", **kwargs)
+    return get_vgg(blocks=11, bias=True, use_bn=True, model_name="bn_vgg11b", **kwargs)
 
 
 def bn_vgg13b(**kwargs):
@@ -426,7 +347,7 @@ def bn_vgg13b(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=13, use_bias=True, use_bn=True, model_name="bn_vgg13b", **kwargs)
+    return get_vgg(blocks=13, bias=True, use_bn=True, model_name="bn_vgg13b", **kwargs)
 
 
 def bn_vgg16b(**kwargs):
@@ -441,7 +362,7 @@ def bn_vgg16b(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=16, use_bias=True, use_bn=True, model_name="bn_vgg16b", **kwargs)
+    return get_vgg(blocks=16, bias=True, use_bn=True, model_name="bn_vgg16b", **kwargs)
 
 
 def bn_vgg19b(**kwargs):
@@ -456,7 +377,7 @@ def bn_vgg19b(**kwargs):
     root : str, default '~/.torch/models'
         Location for keeping the model parameters.
     """
-    return get_vgg(blocks=19, use_bias=True, use_bn=True, model_name="bn_vgg19b", **kwargs)
+    return get_vgg(blocks=19, bias=True, use_bn=True, model_name="bn_vgg19b", **kwargs)
 
 
 def _calc_width(net):

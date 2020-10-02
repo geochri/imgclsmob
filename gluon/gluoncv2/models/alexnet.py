@@ -4,14 +4,15 @@
     https://arxiv.org/abs/1404.5997.
 """
 
-__all__ = ['AlexNet', 'alexnet']
+__all__ = ['AlexNet', 'alexnet', 'alexnetb']
 
 import os
 from mxnet import cpu
 from mxnet.gluon import nn, HybridBlock
+from .common import ConvBlock
 
 
-class AlexConv(HybridBlock):
+class AlexConv(ConvBlock):
     """
     AlexNet specific convolution block.
 
@@ -27,29 +28,32 @@ class AlexConv(HybridBlock):
         Strides of the convolution.
     padding : int or tuple/list of 2 int
         Padding value for convolution layer.
+    use_lrn : bool
+        Whether to use LRN layer.
     """
-
     def __init__(self,
                  in_channels,
                  out_channels,
                  kernel_size,
                  strides,
                  padding,
+                 use_lrn,
                  **kwargs):
-        super(AlexConv, self).__init__(**kwargs)
-        with self.name_scope():
-            self.conv = nn.Conv2D(
-                channels=out_channels,
-                kernel_size=kernel_size,
-                strides=strides,
-                padding=padding,
-                use_bias=True,
-                in_channels=in_channels)
-            self.activ = nn.Activation("relu")
+        super(AlexConv, self).__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            strides=strides,
+            padding=padding,
+            use_bias=True,
+            use_bn=False,
+            **kwargs)
+        self.use_lrn = use_lrn
 
     def hybrid_forward(self, F, x):
-        x = self.conv(x)
-        x = self.activ(x)
+        x = super(AlexConv, self).hybrid_forward(F, x)
+        if self.use_lrn:
+            x = F.LRN(x, nsize=5)
         return x
 
 
@@ -64,7 +68,6 @@ class AlexDense(HybridBlock):
     out_channels : int
         Number of output channels.
     """
-
     def __init__(self,
                  in_channels,
                  out_channels,
@@ -73,7 +76,6 @@ class AlexDense(HybridBlock):
         with self.name_scope():
             self.fc = nn.Dense(
                 units=out_channels,
-                weight_initializer="normal",
                 in_units=in_channels)
             self.activ = nn.Activation("relu")
             self.dropout = nn.Dropout(rate=0.5)
@@ -112,7 +114,6 @@ class AlexOutputBlock(HybridBlock):
                 out_channels=mid_channels)
             self.fc3 = nn.Dense(
                 units=classes,
-                weight_initializer="normal",
                 in_units=mid_channels)
 
     def hybrid_forward(self, F, x):
@@ -137,6 +138,8 @@ class AlexNet(HybridBlock):
         Strides of the convolution for each unit.
     paddings : list of list of int or tuple/list of 2 int
         Padding value for convolution layer for each unit.
+    use_lrn : bool
+        Whether to use LRN layer.
     in_channels : int, default 3
         Number of input channels.
     in_size : tuple of two ints, default (224, 224)
@@ -149,6 +152,7 @@ class AlexNet(HybridBlock):
                  kernel_sizes,
                  strides,
                  paddings,
+                 use_lrn,
                  in_channels=3,
                  in_size=(224, 224),
                  classes=1000,
@@ -160,6 +164,7 @@ class AlexNet(HybridBlock):
         with self.name_scope():
             self.features = nn.HybridSequential(prefix="")
             for i, channels_per_stage in enumerate(channels):
+                use_lrn_i = use_lrn and (i in [0, 1])
                 stage = nn.HybridSequential(prefix="stage{}_".format(i + 1))
                 with stage.name_scope():
                     for j, out_channels in enumerate(channels_per_stage):
@@ -168,12 +173,14 @@ class AlexNet(HybridBlock):
                             out_channels=out_channels,
                             kernel_size=kernel_sizes[i][j],
                             strides=strides[i][j],
-                            padding=paddings[i][j]))
+                            padding=paddings[i][j],
+                            use_lrn=use_lrn_i))
                         in_channels = out_channels
                     stage.add(nn.MaxPool2D(
                         pool_size=3,
                         strides=2,
-                        padding=0))
+                        padding=0,
+                        ceil_mode=True))
                 self.features.add(stage)
 
             self.output = nn.HybridSequential(prefix="")
@@ -189,7 +196,8 @@ class AlexNet(HybridBlock):
         return x
 
 
-def get_alexnet(model_name=None,
+def get_alexnet(version="a",
+                model_name=None,
                 pretrained=False,
                 ctx=cpu(),
                 root=os.path.join("~", ".mxnet", "models"),
@@ -199,6 +207,8 @@ def get_alexnet(model_name=None,
 
     Parameters:
     ----------
+    version : str, default 'a'
+        Version of AlexNet ('a' or 'b').
     model_name : str or None, default None
         Model name for loading pretrained model.
     pretrained : bool, default False
@@ -208,16 +218,27 @@ def get_alexnet(model_name=None,
     root : str, default '~/.mxnet/models'
         Location for keeping the model parameters.
     """
-    channels = [[64], [192], [384, 256, 256]]
-    kernel_sizes = [[11], [5], [3, 3, 3]]
-    strides = [[4], [1], [1, 1, 1]]
-    paddings = [[2], [2], [1, 1, 1]]
+    if version == "a":
+        channels = [[96], [256], [384, 384, 256]]
+        kernel_sizes = [[11], [5], [3, 3, 3]]
+        strides = [[4], [1], [1, 1, 1]]
+        paddings = [[0], [2], [1, 1, 1]]
+        use_lrn = True
+    elif version == "b":
+        channels = [[64], [192], [384, 256, 256]]
+        kernel_sizes = [[11], [5], [3, 3, 3]]
+        strides = [[4], [1], [1, 1, 1]]
+        paddings = [[2], [2], [1, 1, 1]]
+        use_lrn = False
+    else:
+        raise ValueError("Unsupported AlexNet version {}".format(version))
 
     net = AlexNet(
         channels=channels,
         kernel_sizes=kernel_sizes,
         strides=strides,
         paddings=paddings,
+        use_lrn=use_lrn,
         **kwargs)
 
     if pretrained:
@@ -250,6 +271,23 @@ def alexnet(**kwargs):
     return get_alexnet(model_name="alexnet", **kwargs)
 
 
+def alexnetb(**kwargs):
+    """
+    AlexNet-b model from 'One weird trick for parallelizing convolutional neural networks,'
+    https://arxiv.org/abs/1404.5997. Non-standard version.
+
+    Parameters:
+    ----------
+    pretrained : bool, default False
+        Whether to load the pretrained weights for model.
+    ctx : Context, default CPU
+        The context in which to load the pretrained weights.
+    root : str, default '~/.mxnet/models'
+        Location for keeping the model parameters.
+    """
+    return get_alexnet(version="b", model_name="alexnetb", **kwargs)
+
+
 def _test():
     import numpy as np
     import mxnet as mx
@@ -258,6 +296,7 @@ def _test():
 
     models = [
         alexnet,
+        alexnetb,
     ]
 
     for model in models:
@@ -275,7 +314,8 @@ def _test():
                 continue
             weight_count += np.prod(param.shape)
         print("m={}, {}".format(model.__name__, weight_count))
-        assert (model != alexnet or weight_count == 61100840)
+        assert (model != alexnet or weight_count == 62378344)
+        assert (model != alexnetb or weight_count == 61100840)
 
         x = mx.nd.zeros((1, 3, 224, 224), ctx=ctx)
         y = net(x)

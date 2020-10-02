@@ -1,18 +1,38 @@
+"""
+    Routines for model statistics calculation.
+"""
+
 import logging
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from .pytorchcv.models.common import ChannelShuffle, ChannelShuffle2, Identity, Flatten, Swish
-from .pytorchcv.models.fishnet import InterpolationBlock, ChannelSqueeze
+from .pytorchcv.models.common import ChannelShuffle, ChannelShuffle2, Identity, Flatten, Swish, HSigmoid, HSwish,\
+    InterpolationBlock, HeatmapMaxDetBlock
+from .pytorchcv.models.fishnet import ChannelSqueeze
 from .pytorchcv.models.irevnet import IRevDownscale, IRevSplitBlock, IRevMergeBlock
 from .pytorchcv.models.rir_cifar import RiRFinalBlock
 from .pytorchcv.models.proxylessnas import ProxylessUnit
+from .pytorchcv.models.lwopenpose_cmupan import LwopDecoderFinalBlock
+from .pytorchcv.models.centernet import CenterNetHeatmapMaxDet
 
 __all__ = ['measure_model']
 
 
 def calc_block_num_params2(net):
+    """
+    Calculate number of trainable parameters in the block (not iterative).
+
+    Parameters
+    ----------
+    net : Module
+        Model/block.
+
+    Returns
+    -------
+    int
+        Number of parameters.
+    """
     net_params = filter(lambda p: p.requires_grad, net.parameters())
     weight_count = 0
     for param in net_params:
@@ -21,6 +41,19 @@ def calc_block_num_params2(net):
 
 
 def calc_block_num_params(module):
+    """
+    Calculate number of trainable parameters in the block (iterative).
+
+    Parameters
+    ----------
+    module : Module
+        Model/block.
+
+    Returns
+    -------
+    int
+        Number of parameters.
+    """
     assert isinstance(module, nn.Module)
     net_params = filter(lambda p: isinstance(p[1], nn.parameter.Parameter) and p[1].requires_grad,
                         module._parameters.items())
@@ -73,6 +106,9 @@ def measure_model(model,
         elif isinstance(module, nn.ReLU):
             extra_num_flops = x[0].numel()
             extra_num_macs = 0
+        elif isinstance(module, nn.ELU):
+            extra_num_flops = 3 * x[0].numel()
+            extra_num_macs = 0
         elif isinstance(module, nn.Sigmoid):
             extra_num_flops = 4 * x[0].numel()
             extra_num_macs = 0
@@ -88,7 +124,16 @@ def measure_model(model,
         elif isinstance(module, Swish):
             extra_num_flops = 5 * x[0].numel()
             extra_num_macs = 0
-        elif isinstance(module, nn.Conv2d):
+        elif isinstance(module, HSigmoid):
+            extra_num_flops = x[0].numel()
+            extra_num_macs = 0
+        elif isinstance(module, HSwish):
+            extra_num_flops = 2 * x[0].numel()
+            extra_num_macs = 0
+        elif type(module) in [nn.ConvTranspose2d]:
+            extra_num_flops = 4 * x[0].numel()
+            extra_num_macs = 0
+        elif type(module) in [nn.Conv2d]:
             batch = x[0].shape[0]
             x_h = x[0].shape[2]
             x_w = x[0].shape[3]
@@ -166,11 +211,14 @@ def measure_model(model,
         elif isinstance(module, Identity):
             extra_num_flops = 0
             extra_num_macs = 0
+        elif isinstance(module, nn.PixelShuffle):
+            extra_num_flops = x[0].numel()
+            extra_num_macs = 0
         elif isinstance(module, Flatten):
             extra_num_flops = 0
             extra_num_macs = 0
-        elif isinstance(module, InterpolationBlock):
-            extra_num_flops = x[0].numel()
+        elif isinstance(module, nn.Upsample):
+            extra_num_flops = 4 * x[0].numel()
             extra_num_macs = 0
         elif isinstance(module, ChannelSqueeze):
             extra_num_flops = x[0].numel()
@@ -190,6 +238,17 @@ def measure_model(model,
         elif isinstance(module, ProxylessUnit):
             extra_num_flops = x[0].numel()
             extra_num_macs = 0
+        elif isinstance(module, nn.Softmax2d):
+            extra_num_flops = 4 * x[0].numel()
+            extra_num_macs = 0
+        elif type(module) in [InterpolationBlock, HeatmapMaxDetBlock, CenterNetHeatmapMaxDet]:
+            extra_num_flops, extra_num_macs = module.calc_flops(x[0])
+        elif isinstance(module, LwopDecoderFinalBlock):
+            if not module.calc_3d_features:
+                extra_num_flops = 0
+                extra_num_macs = 0
+            else:
+                raise TypeError("LwopDecoderFinalBlock!")
         else:
             raise TypeError("Unknown layer type: {}".format(type(module)))
 

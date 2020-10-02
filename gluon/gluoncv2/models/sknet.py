@@ -35,7 +35,6 @@ class SKConvBlock(HybridBlock):
     min_channels : int, default 32
         Minimal number of intermediate channels (`L` parameter in the paper).
     """
-
     def __init__(self,
                  in_channels,
                  out_channels,
@@ -272,8 +271,6 @@ def get_sknet(blocks,
         Model name for loading pretrained model.
     pretrained : bool, default False
         Whether to load the pretrained weights for model.
-    ctx : Context, default CPU
-        The context in which to load the pretrained weights.
     ctx : Context, default CPU
         The context in which to load the pretrained weights.
     root : str, default '~/.mxnet/models'

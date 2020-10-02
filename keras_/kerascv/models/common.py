@@ -2,10 +2,10 @@
     Common routines for models in Keras.
 """
 
-__all__ = ['is_channels_first', 'get_channel_axis', 'update_keras_shape', 'flatten', 'batchnorm', 'maxpool2d',
-           'avgpool2d', 'conv2d', 'conv1x1', 'conv3x3', 'depthwise_conv3x3', 'conv_block', 'conv1x1_block',
-           'conv3x3_block', 'conv7x7_block', 'dwconv3x3_block', 'dwconv5x5_block', 'pre_conv_block',
-           'pre_conv1x1_block', 'pre_conv3x3_block', 'channel_shuffle_lambda', 'se_block']
+__all__ = ['round_channels', 'HSwish', 'is_channels_first', 'get_channel_axis', 'update_keras_shape', 'flatten',
+           'batchnorm', 'lrn', 'maxpool2d', 'avgpool2d', 'conv2d', 'conv1x1', 'conv3x3', 'depthwise_conv3x3',
+           'conv_block', 'conv1x1_block', 'conv3x3_block', 'conv7x7_block', 'dwconv3x3_block', 'dwconv5x5_block',
+           'pre_conv_block', 'pre_conv1x1_block', 'pre_conv3x3_block', 'channel_shuffle_lambda', 'se_block']
 
 import math
 import numpy as np
@@ -13,6 +13,85 @@ from inspect import isfunction
 from keras.layers import BatchNormalization
 from keras import backend as K
 from keras import layers as nn
+from keras.engine.base_layer import Layer
+
+
+def round_channels(channels,
+                   divisor=8):
+    """
+    Round weighted channel number (make divisible operation).
+
+    Parameters:
+    ----------
+    channels : int or float
+        Original number of channels.
+    divisor : int, default 8
+        Alignment value.
+
+    Returns
+    -------
+    int
+        Weighted number of channels.
+    """
+    rounded_channels = max(int(channels + divisor / 2.0) // divisor * divisor, divisor)
+    if float(rounded_channels) < 0.9 * channels:
+        rounded_channels += divisor
+    return rounded_channels
+
+
+class ReLU6(Layer):
+    """
+    ReLU6 activation layer.
+
+    Parameters:
+    ----------
+    name : str, default 'ReLU6'
+        Layer name.
+    """
+    def __init__(self,
+                 name="ReLU6",
+                 **kwargs):
+        super(ReLU6, self).__init__(name=name, **kwargs)
+
+    def call(self, x):
+        return nn.ReLU(max_value=6.0)(x)
+
+
+class HSigmoid(Layer):
+    """
+    Approximated sigmoid function, so-called hard-version of sigmoid from 'Searching for MobileNetV3,'
+    https://arxiv.org/abs/1905.02244.
+
+    Parameters:
+    ----------
+    name : str, default 'HSigmoid'
+        Layer name.
+    """
+    def __init__(self,
+                 name="HSigmoid",
+                 **kwargs):
+        super(HSigmoid, self).__init__(name=name, **kwargs)
+
+    def call(self, x):
+        return nn.ReLU(max_value=6.0)(x + 3.0) / 6.0
+
+
+class HSwish(Layer):
+    """
+    H-Swish activation function from 'Searching for MobileNetV3,' https://arxiv.org/abs/1905.02244.
+
+    Parameters:
+    ----------
+    name : str, default 'HSwish'
+        Layer name.
+    """
+    def __init__(self,
+                 name="HSwish",
+                 **kwargs):
+        super(HSwish, self).__init__(name=name, **kwargs)
+
+    def call(self, x):
+        return x * nn.ReLU(max_value=6.0)(x + 3.0) / 6.0
 
 
 def swish(x,
@@ -67,6 +146,8 @@ def get_activation_layer(x,
             x = nn.ReLU(max_value=6.0, name=name)(x)
         elif activation == "swish":
             x = swish(x=x, name=name)
+        elif activation == "hswish":
+            x = HSwish(name=name)(x)
         else:
             raise NotImplementedError()
     else:
@@ -108,7 +189,7 @@ def update_keras_shape(x):
         Input tensor/variable/symbol.
     """
     if not hasattr(x, "_keras_shape"):
-        x._keras_shape = tuple([int(d) if d != 0 else None for d in x.shape])
+        x._keras_shape = tuple([int(d) if (d is not None) and (d != 0) else None for d in x.shape])
 
 
 def flatten(x,
@@ -180,6 +261,81 @@ def batchnorm(x,
     return x
 
 
+def lrn(x,
+        alpha=1e-4,
+        beta=0.75,
+        k=2,
+        n=5,
+        name=None):
+    """
+    Local response normalization layer.
+
+    Parameters:
+    ----------
+    x : keras.backend tensor/variable/symbol
+        Input tensor/variable/symbol.
+    alpha : float, 1e-4
+        Variance scaling parameter alpha in the LRN expression.
+    beta : float, 0.75
+        Power parameter beta in the LRN expression.
+    k : float, 2
+        Parameter k in the LRN expression.
+    n : int, 5
+        Normalization window width in elements.
+    name : str, default None
+        Layer name.
+
+    Returns
+    -------
+    keras.backend tensor/variable/symbol
+        Resulted tensor/variable/symbol.
+    """
+    if K.backend() == "mxnet":
+        from keras.backend.mxnet_backend import keras_mxnet_symbol, KerasSymbol
+        import mxnet as mx
+
+        @keras_mxnet_symbol
+        def gluon_lrn(x,
+                      alpha,
+                      beta,
+                      k,
+                      n):
+            if isinstance(x, KerasSymbol):
+                x = x.symbol
+            if isinstance(alpha, KerasSymbol):
+                alpha = alpha.symbol
+            if isinstance(beta, KerasSymbol):
+                beta = beta.symbol
+            if isinstance(k, KerasSymbol):
+                k = k.symbol
+            if isinstance(n, KerasSymbol):
+                n = n.symbol
+            return KerasSymbol(mx.sym.LRN(
+                data=x,
+                alpha=alpha,
+                beta=beta,
+                knorm=k,
+                nsize=n))
+        x = nn.Lambda(
+            lambda z: gluon_lrn(
+                x=z,
+                alpha=alpha,
+                beta=beta,
+                k=k,
+                n=n))(x)
+    else:
+        import tensorflow as tf
+        x = nn.Lambda(
+            lambda z: tf.nn.lrn(
+                input=z,
+                depth_radius=n,
+                bias=k,
+                alpha=alpha,
+                beta=beta,
+                name=name))(x)
+    return x
+
+
 def maxpool2d(x,
               pool_size,
               strides,
@@ -235,9 +391,9 @@ def maxpool2d(x,
         if (padding[0] > 0) or (padding[1] > 0):
             import tensorflow as tf
             x = nn.Lambda(
-                (lambda z: tf.pad(z, [[0, 0], [0, 0], list(padding), list(padding)], mode="REFLECT"))
+                (lambda z: tf.pad(z, [[0, 0], [0, 0], [padding[0]] * 2, [padding[1]] * 2], mode="REFLECT"))
                 if is_channels_first() else
-                (lambda z: tf.pad(z, [[0, 0], list(padding), list(padding), [0, 0]], mode="REFLECT")))(x)
+                (lambda z: tf.pad(z, [[0, 0], [padding[0]] * 2, [padding[1]] * 2, [0, 0]], mode="REFLECT")))(x)
         padding_ke = "valid"
     else:
         if ceil_mode:
@@ -311,9 +467,9 @@ def avgpool2d(x,
         if (padding[0] > 0) or (padding[1] > 0):
             import tensorflow as tf
             x = nn.Lambda(
-                (lambda z: tf.pad(z, [[0, 0], [0, 0], list(padding), list(padding)], mode="REFLECT"))
+                (lambda z: tf.pad(z, [[0, 0], [0, 0], [padding[0]] * 2, [padding[1]] * 2], mode="REFLECT"))
                 if is_channels_first() else
-                (lambda z: tf.pad(z, [[0, 0], list(padding), list(padding), [0, 0]], mode="REFLECT")))(x)
+                (lambda z: tf.pad(z, [[0, 0], [padding[0]] * 2, [padding[1]] * 2, [0, 0]], mode="REFLECT")))(x)
 
         x = nn.AvgPool2D(
             pool_size=pool_size,
@@ -392,9 +548,9 @@ def conv2d(x,
         if (padding[0] > 0) or (padding[1] > 0):
             import tensorflow as tf
             x = nn.Lambda(
-                (lambda z: tf.pad(z, [[0, 0], [0, 0], list(padding), list(padding)]))
+                (lambda z: tf.pad(z, [[0, 0], [0, 0], [padding[0]] * 2, [padding[1]] * 2]))
                 if is_channels_first() else
-                (lambda z: tf.pad(z, [[0, 0], list(padding), list(padding), [0, 0]])))(x)
+                (lambda z: tf.pad(z, [[0, 0], [padding[0]] * 2, [padding[1]] * 2, [0, 0]])))(x)
             if not ((padding[0] == padding[1]) and (kernel_size[0] == kernel_size[1]) and
                     (kernel_size[0] // 2 == padding[0])):
                 extra_pad = True
@@ -591,6 +747,7 @@ def conv_block(x,
                dilation=1,
                groups=1,
                use_bias=False,
+               use_bn=True,
                bn_epsilon=1e-5,
                activation="relu",
                name="conv_block"):
@@ -617,6 +774,8 @@ def conv_block(x,
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_epsilon : float, default 1e-5
         Small float added to variance in Batch norm.
     activation : function or str or None, default 'relu'
@@ -640,10 +799,11 @@ def conv_block(x,
         groups=groups,
         use_bias=use_bias,
         name=name + "/conv")
-    x = batchnorm(
-        x=x,
-        epsilon=bn_epsilon,
-        name=name + "/bn")
+    if use_bn:
+        x = batchnorm(
+            x=x,
+            epsilon=bn_epsilon,
+            name=name + "/bn")
     if activation is not None:
         x = get_activation_layer(
             x=x,
@@ -712,6 +872,7 @@ def conv3x3_block(x,
                   dilation=1,
                   groups=1,
                   use_bias=False,
+                  use_bn=True,
                   bn_epsilon=1e-5,
                   activation="relu",
                   name="conv3x3_block"):
@@ -736,6 +897,8 @@ def conv3x3_block(x,
         Number of groups.
     use_bias : bool, default False
         Whether the layer uses a bias vector.
+    use_bn : bool, default True
+        Whether to use BatchNorm layer.
     bn_epsilon : float, default 1e-5
         Small float added to variance in Batch norm.
     activation : function or str or None, default 'relu'
@@ -758,6 +921,7 @@ def conv3x3_block(x,
         dilation=dilation,
         groups=groups,
         use_bias=use_bias,
+        use_bn=use_bn,
         bn_epsilon=bn_epsilon,
         activation=activation,
         name=name)
@@ -1181,6 +1345,8 @@ def channel_shuffle_lambda(channels,
 def se_block(x,
              channels,
              reduction=16,
+             approx_sigmoid=False,
+             round_mid=False,
              activation="relu",
              name="se_block"):
     """
@@ -1194,6 +1360,10 @@ def se_block(x,
         Number of channels.
     reduction : int, default 16
         Squeeze reduction value.
+    approx_sigmoid : bool, default False
+        Whether to use approximated sigmoid function.
+    round_mid : bool, default False
+        Whether to round middle channel number (make divisible by 8).
     activation : function or str, default 'relu'
         Activation function or name of activation function.
     name : str, default 'se_block'
@@ -1205,7 +1375,7 @@ def se_block(x,
         Resulted tensor/variable/symbol.
     """
     assert(len(x._keras_shape) == 4)
-    mid_cannels = channels // reduction
+    mid_channels = channels // reduction if not round_mid else round_channels(float(channels) / reduction)
     pool_size = x._keras_shape[2:4] if is_channels_first() else x._keras_shape[1:3]
 
     w = nn.AvgPool2D(
@@ -1214,7 +1384,7 @@ def se_block(x,
     w = conv1x1(
         x=w,
         in_channels=channels,
-        out_channels=mid_cannels,
+        out_channels=mid_channels,
         use_bias=True,
         name=name + "/conv1")
     w = get_activation_layer(
@@ -1223,11 +1393,11 @@ def se_block(x,
         name=name + "/activ")
     w = conv1x1(
         x=w,
-        in_channels=mid_cannels,
+        in_channels=mid_channels,
         out_channels=channels,
         use_bias=True,
         name=name + "/conv2")
-    w = nn.Activation("sigmoid", name=name + "/sigmoid")(w)
+    w = HSigmoid(name=name + "/hsigmoid")(w) if approx_sigmoid else nn.Activation("sigmoid", name=name + "/sigmoid")(w)
     x = nn.multiply([x, w], name=name + "/mul")
     return x
 
@@ -1247,7 +1417,7 @@ class GluonBatchNormalization(BatchNormalization):
         If False, `beta` is ignored.
     scale : bool, default True
         If True, multiply by `gamma`. If False, `gamma` is not used.
-        When the next layer is linear (also e.g. `nn.relu`),
+        When the next layer is linear (also e.g. `nn.activate`),
         this can be disabled since the scaling
         will be done by the next layer.
     beta_initializer : str, default 'zeros'

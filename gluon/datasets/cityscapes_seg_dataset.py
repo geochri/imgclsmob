@@ -48,8 +48,8 @@ class CityscapesSegDataset(SegDataset):
             for image_file_name in image_file_names:
                 if image_file_name.endswith(".png"):
                     image_file_path = os.path.join(image_subdir_path, image_file_name)
-                    mask_file_name = image_file_name.replace('leftImg8bit', 'gtFine_labelIds')
-                    mask_subdir_path = image_subdir_path.replace('leftImg8bit', 'gtFine')
+                    mask_file_name = image_file_name.replace("leftImg8bit", "gtFine_labelIds")
+                    mask_subdir_path = image_subdir_path.replace("leftImg8bit", "gtFine")
                     mask_file_path = os.path.join(mask_subdir_path, mask_file_name)
                     if os.path.isfile(mask_file_path):
                         self.images.append(image_file_path)
@@ -71,7 +71,7 @@ class CityscapesSegDataset(SegDataset):
         mask = Image.open(self.masks[index])
 
         if self.mode == "train":
-            image, mask = self._sync_transform(image, mask)
+            image, mask = self._train_sync_transform(image, mask)
         elif self.mode == "val":
             image, mask = self._val_sync_transform(image, mask)
         else:

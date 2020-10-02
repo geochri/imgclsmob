@@ -1,3 +1,7 @@
+"""
+    COCO semantic segmentation dataset.
+"""
+
 import os
 import logging
 import numpy as np
@@ -7,9 +11,9 @@ from .seg_dataset import SegDataset
 from .voc_seg_dataset import VOCMetaInfo
 
 
-class COCOSegDataset(SegDataset):
+class CocoSegDataset(SegDataset):
     """
-    Pascal COCO semantic segmentation dataset.
+    COCO semantic segmentation dataset.
 
     Parameters
     ----------
@@ -25,7 +29,7 @@ class COCOSegDataset(SegDataset):
                  mode="train",
                  transform=None,
                  **kwargs):
-        super(COCOSegDataset, self).__init__(
+        super(CocoSegDataset, self).__init__(
             root=root,
             mode=mode,
             transform=transform,
@@ -68,7 +72,11 @@ class COCOSegDataset(SegDataset):
 
     def _get_label(self, i):
         if self.mode == "demo":
-            return os.path.basename(self.images[i])
+            image_idx = int(self.idx[i])
+            img_metadata = self.coco.loadImgs(image_idx)[0]
+            image_file_name = img_metadata["file_name"]
+            image_file_path = os.path.join(self.image_dir_path, image_file_name)
+            return os.path.basename(image_file_path)
         assert (self.mode == "test")
 
         image_idx = int(self.idx[i])
@@ -137,21 +145,21 @@ class COCOSegDataset(SegDataset):
         return len(self.idx)
 
 
-class COCOMetaInfo(VOCMetaInfo):
+class CocoSegMetaInfo(VOCMetaInfo):
     def __init__(self):
-        super(COCOMetaInfo, self).__init__()
+        super(CocoSegMetaInfo, self).__init__()
         self.label = "COCO"
-        self.short_label = "voc"
+        self.short_label = "coco"
         self.root_dir_name = "coco"
-        self.dataset_class = COCOSegDataset
-        self.num_classes = COCOSegDataset.classes
+        self.dataset_class = CocoSegDataset
+        self.num_classes = CocoSegDataset.classes
         self.test_metric_extra_kwargs = [
-            {"vague_idx": COCOSegDataset.vague_idx,
-             "use_vague": COCOSegDataset.use_vague,
+            {"vague_idx": CocoSegDataset.vague_idx,
+             "use_vague": CocoSegDataset.use_vague,
              "macro_average": False},
-            {"num_classes": COCOSegDataset.classes,
-             "vague_idx": COCOSegDataset.vague_idx,
-             "use_vague": COCOSegDataset.use_vague,
-             "bg_idx": COCOSegDataset.background_idx,
-             "ignore_bg": COCOSegDataset.ignore_bg,
+            {"num_classes": CocoSegDataset.classes,
+             "vague_idx": CocoSegDataset.vague_idx,
+             "use_vague": CocoSegDataset.use_vague,
+             "bg_idx": CocoSegDataset.background_idx,
+             "ignore_bg": CocoSegDataset.ignore_bg,
              "macro_average": False}]
